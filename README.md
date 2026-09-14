@@ -109,11 +109,19 @@ SmallTV 화면은 장비 없이 Windows에서 미리 볼 수 있습니다. Windo
 dotnet run --project src/UsageMonitor.SmallTV.Preview/UsageMonitor.SmallTV.Preview.csproj
 ```
 
+Desktop 앱은 아래 스크립트로 자체 포함 단일 exe(win-x64)를 만듭니다. `-Clean`을 붙이면 이전 출력 폴더를 지우고 새로 만들고, `-OutputDir`로 출력 위치를 바꿀 수 있습니다.
+
+```powershell
+.\tools\publish-desktop.ps1
+```
+
+스크립트는 다음 명령을 실행하는 것과 같습니다.
+
 ```bash
 dotnet publish src/UsageMonitor.Desktop/UsageMonitor.Desktop.csproj -c Release -o artifacts/publish/UsageMonitor.Desktop
 ```
 
-`artifacts\publish\UsageMonitor.Desktop\UsageMonitor.exe` 하나만 복사하면 됩니다(자체 포함 단일 파일, win-x64).
+`artifacts\publish\UsageMonitor.Desktop\UsageMonitor.exe` 하나만 복사하면 됩니다. `artifacts/`는 git에 올라가지 않으므로 새로 받은 저장소에서는 다시 만들어야 합니다.
 
 ## 요청 제한(HTTP 429)
 
