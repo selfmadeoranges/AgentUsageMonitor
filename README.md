@@ -55,6 +55,7 @@ Codex 데스크톱 앱과 CLI는 같은 `auth.json`을 쓰므로, 모니터 전�
 
 - 지금 갱신
 - 위젯 표시 (트레이 아이콘 더블클릭으로도 토글)
+- Claude 표시 / Codex 표시: 끈 도구는 카드가 사라지고 사용량 조회와 알림도 멈춥니다. 둘 중 하나는 항상 켜져 있어야 합니다.
 - 클릭 통과: 켜면 마우스 입력이 아래 창으로 통과하고 드래그로 이동할 수 없습니다.
 - 불투명도: 30 / 50 / 70 / 90 / 100 %
 - Claude 갱신 주기 / Codex 갱신 주기: 각각 30초 / 1분 / 2분 / 5분 / 10분 (하한 30초). 기본은 Claude 2분, Codex 1분입니다. Claude 엔드포인트는 계정 단위 요청 제한이 빡빡해 더 길게 둡니다.
@@ -79,6 +80,8 @@ Codex 데스크톱 앱과 CLI는 같은 `auth.json`을 쓰므로, 모니터 전�
   "AlertThreshold": 95,
   "AutoStart": false,
   "WidgetVisible": true,
+  "ShowClaude": true,
+  "ShowCodex": true,
   "WindowLeft": null,
   "WindowTop": null
 }

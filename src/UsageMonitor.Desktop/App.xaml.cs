@@ -63,6 +63,10 @@ public partial class App : Application
         _window.ClickThrough = _settings.ClickThrough;
         _window.ApplyPosition(_settings.WindowLeft, _settings.WindowTop);
         _window.PositionChanged += OnWindowPositionChanged;
+        foreach (string name in names)
+        {
+            _window.SetToolVisible(name, IsToolVisible(name));
+        }
 
         // 창 핸들이 있어야 클릭 통과 스타일을 적용할 수 있으므로 일단 표시한 뒤 숨긴다.
         _window.Show();
@@ -80,6 +84,7 @@ public partial class App : Application
         _tray.CodexLoginRequested += () => _ = CodexLoginAsync();
         _tray.CodexLogoutRequested += CodexLogout;
         _tray.WidgetVisibleChanged += OnWidgetVisibleChanged;
+        _tray.ToolVisibleChanged += OnToolVisibleChanged;
         _tray.ClickThroughChanged += OnClickThroughChanged;
         _tray.OpacityChanged += OnOpacityChanged;
         _tray.RefreshSecondsChanged += OnRefreshSecondsChanged;
@@ -118,8 +123,10 @@ public partial class App : Application
             return;
         }
 
-        bool needClaude = CredentialStore.LoadClaudeTokens() == null;
-        bool needCodex = CredentialStore.LoadCodexTokens() == null && !CodexUsageProvider.HasCliCredentials();
+        bool needClaude = IsToolVisible("Claude") && CredentialStore.LoadClaudeTokens() == null;
+        bool needCodex = IsToolVisible("Codex")
+                         && CredentialStore.LoadCodexTokens() == null
+                         && !CodexUsageProvider.HasCliCredentials();
 
         if (!needClaude && !needCodex)
         {
@@ -137,6 +144,15 @@ public partial class App : Application
             _tray.ShowAlert("Codex 로그인", "브라우저에서 ChatGPT 로그인을 완료하세요.", System.Windows.Forms.ToolTipIcon.Info);
             await CodexLoginAsync();
         }
+    }
+
+    private bool IsToolVisible(string tool)
+    {
+        if (tool == "Claude")
+        {
+            return _settings.ShowClaude;
+        }
+        return _settings.ShowCodex;
     }
 
     private int GetRefreshSeconds(string tool)
@@ -165,6 +181,12 @@ public partial class App : Application
             foreach (IUsageProvider provider in _providers)
             {
                 string tool = provider.Name;
+
+                // 표시를 끈 도구는 조회하지 않는다.
+                if (!IsToolVisible(tool))
+                {
+                    continue;
+                }
 
                 if (!manual && _pausedUntil.TryGetValue(tool, out DateTimeOffset until) && until > now)
                 {
@@ -432,6 +454,34 @@ public partial class App : Application
         else
         {
             _window?.Hide();
+        }
+    }
+
+    private void OnToolVisibleChanged(string tool, bool visible)
+    {
+        if (tool == "Claude")
+        {
+            _settings.ShowClaude = visible;
+        }
+        else
+        {
+            _settings.ShowCodex = visible;
+        }
+        _settings.Save();
+
+        _window?.SetToolVisible(tool, visible);
+
+        if (visible)
+        {
+            // 다시 켜면 예정 시각을 기다리지 않고 바로 조회한다.
+            _nextDue.Remove(tool);
+            _ = RefreshAsync();
+        }
+        else
+        {
+            // 트레이 아이콘과 툴팁에서도 빠지도록 마지막 값을 지운다.
+            _latest.Remove(tool);
+            _tray?.UpdateStatus(LatestInOrder());
         }
     }
 

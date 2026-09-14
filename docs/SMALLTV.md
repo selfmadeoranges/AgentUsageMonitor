@@ -47,7 +47,7 @@ A DHCP address change is not a fault. The new address appears on the LCD and the
 - Backs off HTTP 429 responses for 2, 5, 10, then 15 minutes.
 - Parses Claude 5-hour and weekly windows, then keeps only the Fable model-scoped weekly window.
 - Selects only the weekly Codex rate-limit window and omits the shorter primary window.
-- Sends the Claude request with a `claude-code/` user agent. The account endpoint otherwise returned a persistent HTTP 429 from the ESP8266 client.
+- Sends every HTTPS request with the product user agent `UsageMonitor-SmallTV/<version>`. Earlier builds impersonated the `claude-code/` user agent because the Claude account endpoint returned a persistent HTTP 429 to the ESP8266 client; that impersonation was removed in 0.2.8 because bypassing a provider-side client check risks the account. If the endpoint again returns 429 with the honest user agent, treat it as a provider decision: lengthen the refresh interval or stop polling Claude from the device rather than restoring the impersonation.
 - Uses HTTP/1.1 and lets ESP8266HTTPClient assemble chunked responses before JSON parsing.
 
 The embedded TLS roots match the endpoint chains observed on 2026-09-14. A later certificate-chain change can require a firmware update. NTP failure prevents API calls because certificate validation without a correct clock is unsafe.
@@ -174,6 +174,7 @@ Verified on 2026-09-14:
 
 Still requiring longer or manual hardware validation:
 
+- Firmware 0.2.8 (honest `UsageMonitor-SmallTV/0.2.8` user agent for all requests) has not been built or flashed yet. Confirm that the Claude endpoint still returns HTTP 200 without the `claude-code/` user agent before relying on the device for Claude usage.
 - OAuth token rotation after the current access tokens expire
 - Connection to the recovery SSID and captive-portal redirect from a second client
 - mDNS discovery, night brightness transitions, and long-running heap/network stability

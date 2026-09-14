@@ -24,6 +24,9 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
+constexpr char FIRMWARE_VERSION[] = "0.2.8";
+// 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.2.8";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -614,7 +617,7 @@ void handleStatusJson() {
     if (!requireAuthentication()) return;
     StaticJsonDocument<2048> document;
     document["model"] = "SmallTV-Ultra";
-    document["firmware"] = "UsageMonitor-0.2.7";
+    document["firmware"] = String(F("UsageMonitor-")) + FIRMWARE_VERSION;
     document["ip"] = currentIpText();
     document["wifiConnected"] = WiFi.status() == WL_CONNECTED;
     document["recoveryAp"] = recoveryActive;
@@ -710,6 +713,7 @@ bool beginSecureRequest(BearSSL::WiFiClientSecure& client, HTTPClient& http, con
     client.setTimeout(HTTP_TIMEOUT_MS);
     http.setTimeout(HTTP_TIMEOUT_MS);
     http.setReuse(false);
+    http.setUserAgent(USER_AGENT);
     if (!http.begin(client, url)) return false;
     http.addHeader(F("Accept"), F("application/json"));
     return true;
@@ -809,7 +813,6 @@ int queryUsage(size_t provider, bool allowRefresh) {
     }
     http.addHeader(F("Authorization"), String(F("Bearer ")) + credentials.accessToken);
     if (provider == 0) {
-        http.setUserAgent(F("claude-code/2.1.69"));
         http.addHeader(F("anthropic-beta"), F("oauth-2025-04-20"));
     } else {
         http.addHeader(F("ChatGPT-Account-Id"), credentials.accountId);

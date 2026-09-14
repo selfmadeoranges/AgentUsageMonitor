@@ -17,6 +17,8 @@ public sealed class TrayIcon : IDisposable
 
     private readonly NotifyIcon _notify;
     private readonly ToolStripMenuItem _showItem = new("위젯 표시") { CheckOnClick = true };
+    private readonly ToolStripMenuItem _claudeShowItem = new("Claude 표시") { CheckOnClick = true };
+    private readonly ToolStripMenuItem _codexShowItem = new("Codex 표시") { CheckOnClick = true };
     private readonly ToolStripMenuItem _clickThroughItem = new("클릭 통과") { CheckOnClick = true };
     private readonly ToolStripMenuItem _alertItem = new("95% 도달 시 알림") { CheckOnClick = true };
     private readonly ToolStripMenuItem _autoStartItem = new("Windows 시작 시 실행") { CheckOnClick = true };
@@ -35,6 +37,8 @@ public sealed class TrayIcon : IDisposable
     public event Action? CodexLoginRequested;
     public event Action? CodexLogoutRequested;
     public event Action<bool>? WidgetVisibleChanged;
+    /// <summary>(도구 이름, 표시 여부)</summary>
+    public event Action<string, bool>? ToolVisibleChanged;
     public event Action<bool>? ClickThroughChanged;
     public event Action<double>? OpacityChanged;
     /// <summary>(도구 이름, 초)</summary>
@@ -52,6 +56,8 @@ public sealed class TrayIcon : IDisposable
         refreshNow.Click += (_, _) => RefreshRequested?.Invoke();
 
         _showItem.Click += (_, _) => WidgetVisibleChanged?.Invoke(_showItem.Checked);
+        _claudeShowItem.Click += (_, _) => OnToolShowClicked(_claudeShowItem, _codexShowItem, "Claude");
+        _codexShowItem.Click += (_, _) => OnToolShowClicked(_codexShowItem, _claudeShowItem, "Codex");
         _clickThroughItem.Click += (_, _) => ClickThroughChanged?.Invoke(_clickThroughItem.Checked);
         _alertItem.Click += (_, _) => AlertEnabledChanged?.Invoke(_alertItem.Checked);
         _autoStartItem.Click += (_, _) => AutoStartChanged?.Invoke(_autoStartItem.Checked);
@@ -89,6 +95,8 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(_codexLogoutItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_showItem);
+        menu.Items.Add(_claudeShowItem);
+        menu.Items.Add(_codexShowItem);
         menu.Items.Add(_clickThroughItem);
         menu.Items.Add(_opacityMenu);
         menu.Items.Add(_claudeRefreshMenu);
@@ -143,12 +151,25 @@ public sealed class TrayIcon : IDisposable
     public void SyncFromSettings(Settings settings)
     {
         _showItem.Checked = settings.WidgetVisible;
+        _claudeShowItem.Checked = settings.ShowClaude;
+        _codexShowItem.Checked = settings.ShowCodex;
         _clickThroughItem.Checked = settings.ClickThrough;
         _alertItem.Checked = settings.AlertEnabled;
         _autoStartItem.Checked = settings.AutoStart;
         CheckByTag(_opacityMenu, (int)Math.Round(settings.Opacity * 100));
         CheckByTag(_claudeRefreshMenu, settings.ClaudeRefreshSeconds);
         CheckByTag(_codexRefreshMenu, settings.CodexRefreshSeconds);
+    }
+
+    /// <summary>마지막으로 남은 도구는 끌 수 없다. 체크를 되돌리고 알리지 않는다.</summary>
+    private void OnToolShowClicked(ToolStripMenuItem clicked, ToolStripMenuItem other, string tool)
+    {
+        if (!clicked.Checked && !other.Checked)
+        {
+            clicked.Checked = true;
+            return;
+        }
+        ToolVisibleChanged?.Invoke(tool, clicked.Checked);
     }
 
     private void FillRefreshMenu(ToolStripMenuItem menu, string tool)

@@ -86,6 +86,15 @@ public partial class MainWindow : Window
         Top = top.Value;
     }
 
+    /// <summary>도구 카드를 숨기거나 다시 보여준다. 창 크기는 내용에 맞춰 자동으로 바뀐다.</summary>
+    public void SetToolVisible(string tool, bool visible)
+    {
+        if (_cards.TryGetValue(tool, out UsageCard? card))
+        {
+            card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
     public void ResetPosition()
     {
         MoveToDefaultPosition();

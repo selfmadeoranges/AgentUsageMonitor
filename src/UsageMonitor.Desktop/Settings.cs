@@ -16,6 +16,9 @@ public sealed class Settings
     public int AlertThreshold { get; set; } = 95;
     public bool AutoStart { get; set; } = false;
     public bool WidgetVisible { get; set; } = true;
+    // 도구별 표시 여부. 꺼진 도구는 카드를 숨기고 사용량 조회도 하지 않는다.
+    public bool ShowClaude { get; set; } = true;
+    public bool ShowCodex { get; set; } = true;
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
 
@@ -97,6 +100,12 @@ public sealed class Settings
         if (AlertThreshold > 100)
         {
             AlertThreshold = 100;
+        }
+        // 둘 다 끄면 빈 위젯만 남으므로 최소 하나는 켠다.
+        if (!ShowClaude && !ShowCodex)
+        {
+            ShowClaude = true;
+            ShowCodex = true;
         }
     }
 }
