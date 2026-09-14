@@ -95,6 +95,12 @@ Codex 데스크톱 앱과 CLI는 같은 `auth.json`을 쓰므로, 모니터 전�
 dotnet build UsageMonitor.slnx -c Release
 ```
 
+SmallTV 펌웨어는 저장소 루트에서 아래 스크립트로 빌드합니다. 첫 실행에는 저장소 내부의 무시된 도구 환경에 PlatformIO를 자동 설치하고, 이후에는 같은 환경을 재사용합니다. 빌드가 끝나면 `firmware.bin` 경로와 SHA-256을 출력합니다.
+
+```powershell
+.\tools\Build-SmallTvFirmware.ps1
+```
+
 SmallTV 화면은 장비 없이 Windows에서 미리 볼 수 있습니다. Windows DPI를 보정한 실제 240×240 픽셀과 2배 확대 화면을 선택할 수 있습니다. 미리보기 앱은 샘플 사용량만 사용하며 OAuth 토큰이나 장비 설정을 읽지 않습니다.
 
 화면 좌표, RGB565 색상, 표시 문구와 페이지 전환 시간은 `shared/smalltv-display-layout.json`에서 함께 관리합니다. 실행 중인 미리보기는 이 파일의 변경을 자동 반영하고, PlatformIO는 펌웨어를 빌드할 때 같은 파일에서 C++ 헤더를 생성합니다.

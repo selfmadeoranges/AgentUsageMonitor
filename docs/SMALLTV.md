@@ -140,11 +140,10 @@ The preview uses a Windows font, so glyph shapes and text widths can differ slig
 ### Firmware
 
 ```powershell
-Set-Location firmware\UsageMonitor.SmallTV
-Copy-Item include\SmallTvConfig.example.h include\SmallTvConfig.h
-# Optionally set initial Wi-Fi and a fixed ADMIN_PASSWORD.
-pio run -j 1
+.\tools\Build-SmallTvFirmware.ps1
 ```
+
+Run the script from the repository root. On its first run, it creates the ignored `tools\.platformio-venv`, installs the pinned PlatformIO Core, and reuses it for later builds. If `SmallTvConfig.h` is missing, the script copies the empty example; initial Wi-Fi can then be configured through the recovery AP. The resulting BIN is written to `firmware\UsageMonitor.SmallTV\.pio\build\smalltv-ultra\firmware.bin`, and the script prints its size and SHA-256.
 
 The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 MB application slot, and the SmallTV-Ultra ST7789 pin map:
 
@@ -157,14 +156,14 @@ The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 
 | Backlight, active low | 5 |
 | CS | tied to GND |
 
-The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.7 uses 541,651 bytes of flash and 32,992 bytes of static RAM; the generated BIN is 545,808 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
+The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.8 uses 541,727 bytes of flash and 33,008 bytes of static RAM; the generated BIN is 545,872 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
 
 ## Verification and installation result
 
 Verified on 2026-09-14:
 
 - `dotnet build -c Release`: 0 warnings and 0 errors after keeping the PC application architecture unchanged.
-- ESP8266 PlatformIO build: success, 51.4% flash and 40.7% static RAM.
+- ESP8266 PlatformIO build: success, 51.9% flash and 40.3% static RAM.
 - Host parser/validation test: all 16 checks passed for both provider response shapes, UTC reset time, invalid percentages, retry backoff, Wi-Fi, tokens, brightness, and night schedule bounds.
 - A reviewed SmallTV loader was used to leave stock `Ultra-V9.0.20`, followed by successful custom-firmware OTA updates through 0.2.5.
 - The physical unit rejoined its saved network through DHCP, reported the always-on recovery AP, synchronized time, and retained its LittleFS network and OAuth settings across OTA.
@@ -174,7 +173,7 @@ Verified on 2026-09-14:
 
 Still requiring longer or manual hardware validation:
 
-- Firmware 0.2.8 (honest `UsageMonitor-SmallTV/0.2.8` user agent for all requests) has not been built or flashed yet. Confirm that the Claude endpoint still returns HTTP 200 without the `claude-code/` user agent before relying on the device for Claude usage.
+- Firmware 0.2.8 (honest `UsageMonitor-SmallTV/0.2.8` user agent for all requests) has been built but has not been flashed yet. Confirm that the Claude endpoint still returns HTTP 200 without the `claude-code/` user agent before relying on the device for Claude usage.
 - OAuth token rotation after the current access tokens expire
 - Connection to the recovery SSID and captive-portal redirect from a second client
 - mDNS discovery, night brightness transitions, and long-running heap/network stability

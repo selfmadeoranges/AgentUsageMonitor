@@ -18,6 +18,7 @@ firmware/UsageMonitor.SmallTV/.pio/
 firmware/UsageMonitor.SmallTV/include/GeneratedDisplayLayout.h
 firmware/UsageMonitor.SmallTV/include/SmallTvConfig.h
 firmware/UsageMonitor.SmallTV/tests/host/usage_parser_test.exe
+tools/.platformio-venv/
 smalltv-credentials*.json
 auth.json
 .credentials.json
