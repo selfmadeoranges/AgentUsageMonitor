@@ -1,0 +1,40 @@
+<UserControl x:Class="UsageMonitor.UsageCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel x:Name="Root" Width="180" Margin="6,0">
+        <DockPanel Margin="0,0,0,4">
+            <TextBlock x:Name="UpdatedText" DockPanel.Dock="Right" FontSize="10" Foreground="#80FFFFFF" VerticalAlignment="Center"/>
+            <Image x:Name="IconImage" DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,6,0"
+                   VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" Visibility="Collapsed"/>
+            <TextBlock x:Name="TitleText" FontSize="13" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <ItemsControl x:Name="Rows">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="0,2,0,4">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding PercentText}" FontSize="11" Foreground="White" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding Label}" FontSize="11" Foreground="#D0FFFFFF"/>
+                        </DockPanel>
+                        <ProgressBar Height="6" Margin="0,2,0,1" Minimum="0" Maximum="100"
+                                     Value="{Binding Percent, Mode=OneWay}"
+                                     Foreground="{Binding BarBrush}" Background="#30FFFFFF" BorderThickness="0">
+                            <ProgressBar.Template>
+                                <ControlTemplate TargetType="ProgressBar">
+                                    <Grid>
+                                        <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3"/>
+                                        <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3"/>
+                                    </Grid>
+                                </ControlTemplate>
+                            </ProgressBar.Template>
+                        </ProgressBar>
+                        <TextBlock Text="{Binding ResetText}" FontSize="9.5" Foreground="#80FFFFFF"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock x:Name="ErrorText" FontSize="10" Foreground="#FFCCCCCC" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,2,0,0"/>
+    </StackPanel>
+</UserControl>
