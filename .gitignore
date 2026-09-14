@@ -15,6 +15,7 @@ artifacts/
 .env.*
 !.env.example
 firmware/UsageMonitor.SmallTV/.pio/
+firmware/UsageMonitor.SmallTV/include/GeneratedDisplayLayout.h
 firmware/UsageMonitor.SmallTV/include/SmallTvConfig.h
 firmware/UsageMonitor.SmallTV/tests/host/usage_parser_test.exe
 smalltv-credentials*.json

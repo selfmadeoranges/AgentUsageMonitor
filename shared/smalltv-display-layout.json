@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "display": {
+    "width": 240,
+    "height": 240,
+    "pageIntervalMs": 6000
+  },
+  "colors": {
+    "background": "0x1082",
+    "panel": "0x2104",
+    "muted": "0x8C51",
+    "green": "0x4D6A",
+    "orange": "0xFD24",
+    "red": "0xF28A"
+  },
+  "usagePage": {
+    "title": { "x": 12, "y": 4, "font": 4, "scale": 1 },
+    "counter": { "x": 207, "y": 8, "font": 2, "scale": 1 },
+    "row": {
+      "x": 10,
+      "y": 36,
+      "width": 220,
+      "height": 52,
+      "step": 52,
+      "count": 3,
+      "labelX": 12,
+      "labelOffsetY": 0,
+      "labelFont": 4,
+      "percentRight": 228,
+      "percentOffsetY": 0,
+      "percentFont": 4,
+      "barX": 12,
+      "barOffsetY": 26,
+      "barWidth": 216,
+      "barHeight": 6,
+      "countdownX": 12,
+      "countdownOffsetY": 34,
+      "countdownFont": 2
+    },
+    "empty": { "x": 12, "y": 58, "font": 4, "scale": 1 },
+    "footer": {
+      "x": 0,
+      "y": 197,
+      "width": 240,
+      "height": 43,
+      "stateX": 12,
+      "stateY": 198,
+      "stateFont": 2,
+      "ipX": 12,
+      "ipY": 218,
+      "ipFont": 2
+    }
+  },
+  "recoveryPage": {
+    "title": { "x": 12, "y": 12, "font": 2, "scale": 1, "text": "WI-FI RECOVERY" },
+    "connectLabel": { "x": 12, "y": 47, "font": 2, "scale": 1, "text": "Connect to" },
+    "ssid": { "x": 12, "y": 67, "font": 2, "scale": 1 },
+    "passwordLabel": { "x": 12, "y": 102, "font": 2, "scale": 1, "text": "Password" },
+    "password": { "x": 12, "y": 122, "font": 2, "scale": 1 },
+    "openAddress": { "x": 12, "y": 158, "font": 2, "scale": 1, "text": "Open 192.168.4.1" },
+    "user": { "x": 12, "y": 188, "font": 2, "scale": 1, "text": "User: admin" }
+  },
+  "text": {
+    "usageUnavailable": "Usage unavailable",
+    "synchronizingTime": "Synchronizing time",
+    "configureAccount": "Configure account",
+    "loadingUsage": "Loading usage",
+    "retryingLater": "Retrying later",
+    "stateStale": "STALE",
+    "stateRateLimited": "RATE LIMITED",
+    "stateAuthRequired": "AUTH REQUIRED",
+    "stateNetworkError": "NETWORK ERROR",
+    "stateInvalidResponse": "BAD RESPONSE",
+    "ipPrefix": "IP "
+  }
+}

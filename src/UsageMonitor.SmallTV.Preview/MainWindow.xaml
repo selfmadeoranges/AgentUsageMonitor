@@ -1,0 +1,78 @@
+<Window x:Class="UsageMonitor.SmallTV.Preview.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SmallTV-Ultra 화면 미리보기"
+        Width="850" Height="560" MinWidth="780" MinHeight="520"
+        Background="#202124" Foreground="#F4F4F4"
+        UseLayoutRounding="True"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="20">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="480"/>
+            <ColumnDefinition Width="24"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Top"
+                BorderBrush="#505050" BorderThickness="1" Background="Black">
+            <Viewbox x:Name="LcdViewbox" Width="480" Height="480" Stretch="Uniform"
+                     SnapsToDevicePixels="True">
+                <Canvas x:Name="LcdCanvas" Width="240" Height="240" Background="#101010"
+                        SnapsToDevicePixels="True" RenderOptions.EdgeMode="Aliased"/>
+            </Viewbox>
+        </Border>
+
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="미리보기 설정" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,18"/>
+                <TextBlock x:Name="LayoutStatusText" Text="공용 화면 레이아웃 불러오는 중..."
+                           Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap" Margin="0,-10,0,14"/>
+
+                <TextBlock Text="화면 크기" Margin="0,0,0,5"/>
+                <ComboBox x:Name="ScaleCombo" SelectedIndex="1" SelectionChanged="ScaleChanged" Margin="0,0,0,5">
+                    <ComboBoxItem Tag="1">실제 240×240 픽셀</ComboBoxItem>
+                    <ComboBoxItem Tag="2">2배 확대 480×480 픽셀</ComboBoxItem>
+                </ComboBox>
+                <TextBlock x:Name="ActualSizeText" Foreground="#AAAAAA" FontSize="11" Margin="0,0,0,12"/>
+
+                <TextBlock Text="페이지" Margin="0,0,0,5"/>
+                <ComboBox x:Name="ProviderCombo" SelectedIndex="0" SelectionChanged="ProviderChanged" Margin="0,0,0,12">
+                    <ComboBoxItem Tag="Claude">Claude (1/2)</ComboBoxItem>
+                    <ComboBoxItem Tag="Codex">Codex (2/2)</ComboBoxItem>
+                </ComboBox>
+
+                <TextBlock Text="상태" Margin="0,0,0,5"/>
+                <ComboBox x:Name="StateCombo" SelectedIndex="0" SelectionChanged="PreviewChanged" Margin="0,0,0,12">
+                    <ComboBoxItem Tag="ok">정상</ComboBoxItem>
+                    <ComboBoxItem Tag="stale">오래된 값</ComboBoxItem>
+                    <ComboBoxItem Tag="auth_required">계정 설정 필요</ComboBoxItem>
+                    <ComboBoxItem Tag="rate_limited">요청 제한</ComboBoxItem>
+                    <ComboBoxItem Tag="network_error">네트워크 오류</ComboBoxItem>
+                    <ComboBoxItem Tag="invalid_response">응답 형식 오류</ComboBoxItem>
+                    <ComboBoxItem Tag="waiting">조회 대기</ComboBoxItem>
+                </ComboBox>
+
+                <TextBlock Text="사용률 (쉼표로 구분, 최대 3개)" Margin="0,0,0,5"/>
+                <TextBox x:Name="PercentagesText" Text="8,18,35" TextChanged="PreviewChanged"
+                         Padding="7" Margin="0,0,0,12"/>
+
+                <TextBlock Text="현재 IP" Margin="0,0,0,5"/>
+                <TextBox x:Name="IpText" Text="192.168.50.120" TextChanged="PreviewChanged"
+                         Padding="7" Margin="0,0,0,12"/>
+
+                <CheckBox x:Name="AutoSwitchCheck" Content="6초마다 Claude/Codex 전환" IsChecked="True"
+                          Checked="PreviewChanged" Unchecked="PreviewChanged" Margin="0,0,0,10"/>
+                <CheckBox x:Name="RecoveryCheck" Content="Wi-Fi 복구 화면 표시"
+                          Checked="PreviewChanged" Unchecked="PreviewChanged" Margin="0,0,0,12"/>
+
+                <TextBlock Text="복구 AP 예제 암호" Margin="0,0,0,5"/>
+                <TextBox x:Name="RecoveryPasswordText" Text="UM123456ABCD" TextChanged="PreviewChanged"
+                         Padding="7" Margin="0,0,0,16"/>
+
+                <Button Content="샘플 값 초기화" Click="ResetSamplesClicked" Padding="10,7" HorizontalAlignment="Stretch"/>
+                <TextBlock Margin="0,16,0,0" Foreground="#AAAAAA" TextWrapping="Wrap"
+                           Text="실제 크기 모드는 Windows 화면 배율을 보정해 LCD 영역을 240×240 물리 픽셀로 표시합니다. Windows 글꼴을 사용하므로 TFT_eSPI 비트맵 글꼴과 글자 폭은 조금 다를 수 있습니다."/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

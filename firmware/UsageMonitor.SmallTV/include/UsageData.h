@@ -7,7 +7,7 @@
 #include <cstring>
 
 constexpr size_t MAX_TOOLS = 2;
-constexpr size_t MAX_WINDOWS = 4;
+constexpr size_t MAX_WINDOWS = 3;
 constexpr size_t MAX_JSON_BYTES = 12288;
 
 struct WindowData {
@@ -70,6 +70,18 @@ inline bool addWindow(ToolData& tool, const char* label, float percent, int64_t 
     return true;
 }
 
+inline bool equalsIgnoreCaseAscii(const char* left, const char* right) {
+    if (left == nullptr || right == nullptr) return false;
+    while (*left != '\0' && *right != '\0') {
+        char leftValue = *left >= 'A' && *left <= 'Z' ? static_cast<char>(*left + ('a' - 'A')) : *left;
+        char rightValue = *right >= 'A' && *right <= 'Z' ? static_cast<char>(*right + ('a' - 'A')) : *right;
+        if (leftValue != rightValue) return false;
+        left++;
+        right++;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
 inline bool parseClaudeUsage(JsonDocument& doc, ToolData& output, int64_t now) {
     ToolData next;
     snprintf(next.name, sizeof(next.name), "Claude");
@@ -82,25 +94,17 @@ inline bool parseClaudeUsage(JsonDocument& doc, ToolData& output, int64_t now) {
     }
     JsonArrayConst limits = doc["limits"].as<JsonArrayConst>();
     for (JsonObjectConst limit : limits) {
-        if (next.windowCount >= MAX_WINDOWS || strcmp(limit["kind"] | "", "weekly_scoped") != 0
-            || !limit["percent"].is<float>()) continue;
-        const char* modelName = limit["scope"]["model"]["display_name"] | "Model week";
-        char label[19];
-        snprintf(label, sizeof(label), "%.18s", modelName);
-        addWindow(next, label, limit["percent"].as<float>(), parseIso8601Utc(limit["resets_at"] | ""));
+        if (strcmp(limit["kind"] | "", "weekly_scoped") != 0 || !limit["percent"].is<float>()) continue;
+        const char* modelName = limit["scope"]["model"]["display_name"] | "";
+        if (!equalsIgnoreCaseAscii(modelName, "Fable")) continue;
+        addWindow(next, "Fable", limit["percent"].as<float>(), parseIso8601Utc(limit["resets_at"] | ""));
+        break;
     }
     if (next.windowCount == 0) return false;
     snprintf(next.state, sizeof(next.state), "ok");
     next.lastSuccessAt = now;
     output = next;
     return true;
-}
-
-inline void codexWindowLabel(char* output, size_t size, int64_t seconds) {
-    if (seconds >= 6 * 86400) snprintf(output, size, "Week");
-    else if (seconds >= 3600) snprintf(output, size, "%ld hours", static_cast<long>(seconds / 3600));
-    else if (seconds > 0) snprintf(output, size, "%ld min", static_cast<long>(seconds / 60));
-    else snprintf(output, size, "Limit");
 }
 
 inline bool parseCodexUsage(JsonDocument& doc, ToolData& output, int64_t now) {
@@ -113,9 +117,9 @@ inline bool parseCodexUsage(JsonDocument& doc, ToolData& output, int64_t now) {
         JsonObjectConst item = rateLimit[property].as<JsonObjectConst>();
         if (item.isNull() || !item["used_percent"].is<float>()) continue;
         int64_t seconds = item["limit_window_seconds"] | 0;
-        char label[19];
-        codexWindowLabel(label, sizeof(label), seconds);
-        addWindow(next, label, item["used_percent"].as<float>(), item["reset_at"] | -1);
+        if (seconds < 6 * 86400) continue;
+        addWindow(next, "Week", item["used_percent"].as<float>(), item["reset_at"] | -1);
+        break;
     }
     if (next.windowCount == 0) return false;
     snprintf(next.state, sizeof(next.state), "ok");

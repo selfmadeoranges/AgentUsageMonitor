@@ -11,6 +11,7 @@
 #include <time.h>
 
 #include "RecoveryValidation.h"
+#include "GeneratedDisplayLayout.h"
 #include "TlsRoots.h"
 #include "UsageData.h"
 
@@ -23,12 +24,6 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr uint16_t BG = 0x1082;
-constexpr uint16_t PANEL = 0x2104;
-constexpr uint16_t MUTED = 0x8C51;
-constexpr uint16_t GREEN = 0x4D6A;
-constexpr uint16_t ORANGE = 0xFD24;
-constexpr uint16_t RED = 0xF28A;
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -37,7 +32,9 @@ constexpr char CODEX_USAGE_URL[] = "https://chatgpt.com/backend-api/wham/usage";
 constexpr char CODEX_TOKEN_URL[] = "https://auth.openai.com/oauth/token";
 constexpr char CODEX_CLIENT_ID[] = "app_EMoamEEZ73f0CkXaXp7hrann";
 
-static_assert(PAGE_INTERVAL_MS >= 1000, "Page interval must be at least one second");
+static_assert(DisplayLayout::Width == 240 && DisplayLayout::Height == 240, "SmallTV-Ultra display must be 240 x 240");
+static_assert(DisplayLayout::PageIntervalMs >= 1000, "Page interval must be at least one second");
+static_assert(DisplayLayout::UsageRowCount <= MAX_WINDOWS, "Display row count exceeds data capacity");
 static_assert(sizeof(WIFI_SSID) <= 33, "Wi-Fi SSID is limited to 32 bytes");
 static_assert(sizeof(WIFI_PASSWORD) <= 64, "Wi-Fi password is limited to 63 bytes");
 static_assert(sizeof(ADMIN_PASSWORD) <= 32, "Admin password is limited to 31 bytes");
@@ -107,8 +104,14 @@ bool timeReady() {
 }
 
 void drawText(int x, int y, const char* text, uint16_t color, int font = 2) {
-    tft.setTextColor(color, BG);
+    tft.setTextColor(color, DisplayLayout::BackgroundColor);
     tft.drawString(text, x, y, font);
+}
+
+void drawLayoutText(int x, int y, const char* text, uint16_t color, int font, int scale = 1) {
+    tft.setTextSize(scale);
+    drawText(x, y, text, color, font);
+    tft.setTextSize(1);
 }
 
 void applyBrightness() {
@@ -611,7 +614,7 @@ void handleStatusJson() {
     if (!requireAuthentication()) return;
     StaticJsonDocument<2048> document;
     document["model"] = "SmallTV-Ultra";
-    document["firmware"] = "UsageMonitor-0.2.5";
+    document["firmware"] = "UsageMonitor-0.2.7";
     document["ip"] = currentIpText();
     document["wifiConnected"] = WiFi.status() == WL_CONNECTED;
     document["recoveryAp"] = recoveryActive;
@@ -853,14 +856,21 @@ void formatCountdown(char* output, size_t size, int64_t seconds) {
 }
 
 void drawRecoveryPage() {
-    tft.fillScreen(BG);
-    drawText(12, 12, "WI-FI RECOVERY", TFT_WHITE);
-    drawText(12, 47, "Connect to", MUTED);
-    drawText(12, 67, recoverySsid, ORANGE);
-    drawText(12, 102, "Password", MUTED);
-    drawText(12, 122, adminPassword, ORANGE);
-    drawText(12, 158, "Open 192.168.4.1", TFT_WHITE);
-    drawText(12, 188, "User: admin", MUTED);
+    tft.fillScreen(DisplayLayout::BackgroundColor);
+    drawLayoutText(DisplayLayout::RecoveryTitleX, DisplayLayout::RecoveryTitleY, DisplayLayout::RecoveryTitleText,
+        TFT_WHITE, DisplayLayout::RecoveryTitleFont, DisplayLayout::RecoveryTitleScale);
+    drawLayoutText(DisplayLayout::RecoveryConnectLabelX, DisplayLayout::RecoveryConnectLabelY, DisplayLayout::RecoveryConnectLabelText,
+        DisplayLayout::MutedColor, DisplayLayout::RecoveryConnectLabelFont, DisplayLayout::RecoveryConnectLabelScale);
+    drawLayoutText(DisplayLayout::RecoverySsidX, DisplayLayout::RecoverySsidY, recoverySsid,
+        DisplayLayout::OrangeColor, DisplayLayout::RecoverySsidFont, DisplayLayout::RecoverySsidScale);
+    drawLayoutText(DisplayLayout::RecoveryPasswordLabelX, DisplayLayout::RecoveryPasswordLabelY, DisplayLayout::RecoveryPasswordLabelText,
+        DisplayLayout::MutedColor, DisplayLayout::RecoveryPasswordLabelFont, DisplayLayout::RecoveryPasswordLabelScale);
+    drawLayoutText(DisplayLayout::RecoveryPasswordX, DisplayLayout::RecoveryPasswordY, adminPassword,
+        DisplayLayout::OrangeColor, DisplayLayout::RecoveryPasswordFont, DisplayLayout::RecoveryPasswordScale);
+    drawLayoutText(DisplayLayout::RecoveryOpenAddressX, DisplayLayout::RecoveryOpenAddressY, DisplayLayout::RecoveryOpenAddressText,
+        TFT_WHITE, DisplayLayout::RecoveryOpenAddressFont, DisplayLayout::RecoveryOpenAddressScale);
+    drawLayoutText(DisplayLayout::RecoveryUserX, DisplayLayout::RecoveryUserY, DisplayLayout::RecoveryUserText,
+        DisplayLayout::MutedColor, DisplayLayout::RecoveryUserFont, DisplayLayout::RecoveryUserScale);
 }
 
 void drawUsagePage(bool clear) {
@@ -870,54 +880,66 @@ void drawUsagePage(bool clear) {
         return;
     }
     recoveryDrawn = false;
-    if (clear) tft.fillScreen(BG);
+    if (clear) tft.fillScreen(DisplayLayout::BackgroundColor);
     ToolData& tool = usage.tools[displayPage];
     int64_t now = unixNow();
     bool stale = tool.lastSuccessAt < 0 || now < 0 || now - tool.lastSuccessAt > settings.refreshSeconds * 2 + 30;
-    tft.fillRect(0, 0, 240, 38, BG);
-    tft.setTextSize(2);
-    drawText(12, 9, tool.name, TFT_WHITE, 1);
-    tft.setTextSize(1);
+    tft.fillRect(0, 0, DisplayLayout::Width, DisplayLayout::UsageRowY - 2, DisplayLayout::BackgroundColor);
+    drawLayoutText(DisplayLayout::UsageTitleX, DisplayLayout::UsageTitleY, tool.name, TFT_WHITE,
+        DisplayLayout::UsageTitleFont, DisplayLayout::UsageTitleScale);
     char counter[8];
     snprintf(counter, sizeof(counter), "%u/2", static_cast<unsigned>(displayPage + 1));
-    drawText(207, 10, counter, MUTED);
-    for (size_t i = 0; i < MAX_WINDOWS; i++) {
-        int y = 40 + static_cast<int>(i) * 41;
-        tft.fillRect(10, y, 220, 41, BG);
+    drawLayoutText(DisplayLayout::UsageCounterX, DisplayLayout::UsageCounterY, counter, DisplayLayout::MutedColor,
+        DisplayLayout::UsageCounterFont, DisplayLayout::UsageCounterScale);
+    for (size_t i = 0; i < DisplayLayout::UsageRowCount; i++) {
+        int y = DisplayLayout::UsageRowY + static_cast<int>(i) * DisplayLayout::UsageRowStep;
+        tft.fillRect(DisplayLayout::UsageRowX, y, DisplayLayout::UsageRowWidth, DisplayLayout::UsageRowHeight,
+            DisplayLayout::BackgroundColor);
         if (i >= tool.windowCount) continue;
         WindowData& window = tool.windows[i];
-        uint16_t color = stale ? MUTED : window.percent >= 95 ? RED : window.percent >= 70 ? ORANGE : GREEN;
-        drawText(12, y, window.label, TFT_WHITE);
+        uint16_t color = stale ? DisplayLayout::MutedColor : window.percent >= 95 ? DisplayLayout::RedColor
+            : window.percent >= 70 ? DisplayLayout::OrangeColor : DisplayLayout::GreenColor;
+        drawLayoutText(DisplayLayout::UsageRowLabelX, y + DisplayLayout::UsageRowLabelOffsetY, window.label,
+            TFT_WHITE, DisplayLayout::UsageRowLabelFont);
         char percent[12];
         snprintf(percent, sizeof(percent), "%.0f%%", static_cast<double>(window.percent));
-        tft.setTextColor(color, BG);
-        tft.drawRightString(percent, 228, y, 2);
-        tft.fillRect(12, y + 18, 216, 5, PANEL);
-        tft.fillRect(12, y + 18, static_cast<int>(216 * window.percent / 100), 5, color);
+        tft.setTextColor(color, DisplayLayout::BackgroundColor);
+        tft.drawRightString(percent, DisplayLayout::UsageRowPercentRight,
+            y + DisplayLayout::UsageRowPercentOffsetY, DisplayLayout::UsageRowPercentFont);
+        tft.fillRect(DisplayLayout::UsageRowBarX, y + DisplayLayout::UsageRowBarOffsetY,
+            DisplayLayout::UsageRowBarWidth, DisplayLayout::UsageRowBarHeight, DisplayLayout::PanelColor);
+        tft.fillRect(DisplayLayout::UsageRowBarX, y + DisplayLayout::UsageRowBarOffsetY,
+            static_cast<int>(DisplayLayout::UsageRowBarWidth * window.percent / 100), DisplayLayout::UsageRowBarHeight, color);
         char resetText[32];
         int64_t resetSeconds = window.resetAt < 0 || now < 0 ? -1 : window.resetAt > now ? window.resetAt - now : 0;
         formatCountdown(resetText, sizeof(resetText), resetSeconds);
-        drawText(12, y + 27, resetText, MUTED, 1);
+        drawLayoutText(DisplayLayout::UsageRowCountdownX, y + DisplayLayout::UsageRowCountdownOffsetY, resetText,
+            DisplayLayout::MutedColor, DisplayLayout::UsageRowCountdownFont);
     }
     if (tool.windowCount == 0) {
-        const char* message = "Usage unavailable";
-        if (!timeReady()) message = "Synchronizing time";
-        else if (strcmp(tool.state, "auth_required") == 0) message = "Configure account";
-        else if (strcmp(tool.state, "waiting") == 0) message = "Loading usage";
-        else if (strcmp(tool.state, "rate_limited") == 0) message = "Retrying later";
-        drawText(12, 62, message, MUTED);
+        const char* message = DisplayLayout::UsageUnavailableText;
+        if (!timeReady()) message = DisplayLayout::SynchronizingTimeText;
+        else if (strcmp(tool.state, "auth_required") == 0) message = DisplayLayout::ConfigureAccountText;
+        else if (strcmp(tool.state, "waiting") == 0) message = DisplayLayout::LoadingUsageText;
+        else if (strcmp(tool.state, "rate_limited") == 0) message = DisplayLayout::RetryingLaterText;
+        drawLayoutText(DisplayLayout::UsageEmptyX, DisplayLayout::UsageEmptyY, message, DisplayLayout::MutedColor,
+            DisplayLayout::UsageEmptyFont, DisplayLayout::UsageEmptyScale);
     }
-    tft.fillRect(0, 208, 240, 32, BG);
-    const char* state = strcmp(tool.state, "ok") == 0 && stale ? "STALE" : tool.state;
-    if (strcmp(state, "rate_limited") == 0) state = "RATE LIMITED";
-    else if (strcmp(state, "auth_required") == 0) state = "AUTH REQUIRED";
-    else if (strcmp(state, "network_error") == 0) state = "NETWORK ERROR";
-    else if (strcmp(state, "invalid_response") == 0) state = "BAD RESPONSE";
-    drawText(12, 209, state, strcmp(state, "ok") == 0 ? MUTED : ORANGE, 1);
+    tft.fillRect(DisplayLayout::UsageFooterX, DisplayLayout::UsageFooterY, DisplayLayout::UsageFooterWidth,
+        DisplayLayout::UsageFooterHeight, DisplayLayout::BackgroundColor);
+    const char* state = strcmp(tool.state, "ok") == 0 && stale ? DisplayLayout::StateStaleText : tool.state;
+    if (strcmp(state, "rate_limited") == 0) state = DisplayLayout::StateRateLimitedText;
+    else if (strcmp(state, "auth_required") == 0) state = DisplayLayout::StateAuthRequiredText;
+    else if (strcmp(state, "network_error") == 0) state = DisplayLayout::StateNetworkErrorText;
+    else if (strcmp(state, "invalid_response") == 0) state = DisplayLayout::StateInvalidResponseText;
+    drawLayoutText(DisplayLayout::UsageFooterStateX, DisplayLayout::UsageFooterStateY, state,
+        strcmp(state, "ok") == 0 ? DisplayLayout::MutedColor : DisplayLayout::OrangeColor,
+        DisplayLayout::UsageFooterStateFont);
     String ip = currentIpText();
-    String footer = F("IP ");
+    String footer = DisplayLayout::IpPrefixText;
     footer += ip;
-    drawText(12, 225, footer.c_str(), MUTED, 1);
+    drawLayoutText(DisplayLayout::UsageFooterIpX, DisplayLayout::UsageFooterIpY, footer.c_str(),
+        DisplayLayout::MutedColor, DisplayLayout::UsageFooterIpFont);
 }
 
 void beginWifiIfDue(uint32_t now) {
@@ -988,7 +1010,7 @@ void loop() {
         }
     }
     now = millis();
-    bool pageChanged = now - lastPageChangeAt >= PAGE_INTERVAL_MS;
+    bool pageChanged = now - lastPageChangeAt >= DisplayLayout::PageIntervalMs;
     if (pageChanged) {
         lastPageChangeAt = now;
         displayPage = (displayPage + 1) % MAX_TOOLS;

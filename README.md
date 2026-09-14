@@ -8,6 +8,7 @@ WPF(.NET 10)로 만들었고, 테두리 없는 투명 창 + Topmost + 트레이 
 | 경로 | 프로젝트 |
 |---|---|
 | `src/UsageMonitor.Desktop` | Windows WPF 사용량 위젯 |
+| `src/UsageMonitor.SmallTV.Preview` | Windows용 SmallTV 240×240 화면 미리보기 |
 | `firmware/UsageMonitor.SmallTV` | SmallTV-Ultra ESP8266 PlatformIO 펌웨어 |
 | `UsageMonitor.slnx` | Windows 데스크톱 프로젝트용 .NET 솔루션 |
 
@@ -91,6 +92,14 @@ Codex 데스크톱 앱과 CLI는 같은 `auth.json`을 쓰므로, 모니터 전�
 dotnet build UsageMonitor.slnx -c Release
 ```
 
+SmallTV 화면은 장비 없이 Windows에서 미리 볼 수 있습니다. Windows DPI를 보정한 실제 240×240 픽셀과 2배 확대 화면을 선택할 수 있습니다. 미리보기 앱은 샘플 사용량만 사용하며 OAuth 토큰이나 장비 설정을 읽지 않습니다.
+
+화면 좌표, RGB565 색상, 표시 문구와 페이지 전환 시간은 `shared/smalltv-display-layout.json`에서 함께 관리합니다. 실행 중인 미리보기는 이 파일의 변경을 자동 반영하고, PlatformIO는 펌웨어를 빌드할 때 같은 파일에서 C++ 헤더를 생성합니다.
+
+```bash
+dotnet run --project src/UsageMonitor.SmallTV.Preview/UsageMonitor.SmallTV.Preview.csproj
+```
+
 ```bash
 dotnet publish src/UsageMonitor.Desktop/UsageMonitor.Desktop.csproj -c Release -o artifacts/publish/UsageMonitor.Desktop
 ```
@@ -111,6 +120,8 @@ Claude 엔드포인트의 제한은 토큰이 아니라 계정 단위로 보입�
 ## SmallTV-Ultra 연동
 
 `firmware/UsageMonitor.SmallTV`에는 PC 앱과 별개로 동작하는 ESP8266 펌웨어가 있습니다. SmallTV가 Wi-Fi에서 DHCP 주소를 받고 Claude/Codex 사용량 엔드포인트를 HTTPS로 직접 조회합니다. LCD에는 사용률, 리셋까지 남은 시간, 현재 IP를 표시합니다.
+
+SmallTV LCD는 Claude의 5시간, 주간, Fable 주간 한도와 Codex의 주간 한도만 표시합니다. PC용 WPF 위젯의 표시 범위는 그대로 유지합니다.
 
 웹 설정은 정상 Wi-Fi 주소와 복구 AP `192.168.4.1`에서 모두 열립니다. Wi-Fi 검색/수동 입력, 연결 지연, 계정 토큰, 밝기, 야간 모드, 초기화, 재부팅, OTA를 제공합니다. PC UsageMonitor 앱에는 SmallTV용 서버나 설정을 추가하지 않았습니다.
 

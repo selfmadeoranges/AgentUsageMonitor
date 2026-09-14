@@ -19,7 +19,10 @@ int main() {
     deserializeJson(claude, R"json({
       "five_hour":{"utilization":73.2,"resets_at":"2026-09-14T02:00:00Z"},
       "seven_day":{"utilization":25,"resets_at":"2026-09-20T00:00:00Z"},
-      "limits":[{"kind":"weekly_scoped","percent":51.5,"resets_at":"2026-09-21T00:00:00Z","scope":{"model":{"display_name":"Claude Opus"}}}]
+      "limits":[
+        {"kind":"weekly_scoped","percent":91,"resets_at":"2026-09-21T00:00:00Z","scope":{"model":{"display_name":"Claude Opus"}}},
+        {"kind":"weekly_scoped","percent":51.5,"resets_at":"2026-09-21T00:00:00Z","scope":{"model":{"display_name":"Fable"}}}
+      ]
     })json");
     ToolData claudeData;
     check(parseClaudeUsage(claude, claudeData, now) && claudeData.windowCount == 3,
@@ -27,8 +30,9 @@ int main() {
     check(std::abs(claudeData.windows[0].percent - 73.2f) < 0.01f
           && claudeData.windows[0].resetAt == now + 7200,
           "Claude percentage and ISO reset time are preserved");
-    check(strcmp(claudeData.windows[2].label, "Claude Opus") == 0,
-          "Claude model limit gets a bounded display label");
+    check(strcmp(claudeData.windows[2].label, "Fable") == 0
+          && std::abs(claudeData.windows[2].percent - 51.5f) < 0.01f,
+          "Claude only keeps the Fable weekly limit");
 
     StaticJsonDocument<2048> codex;
     deserializeJson(codex, R"json({
@@ -36,11 +40,11 @@ int main() {
       "secondary_window":{"used_percent":67.5,"limit_window_seconds":604800,"reset_at":1789948800}}
     })json");
     ToolData codexData;
-    check(parseCodexUsage(codex, codexData, now) && codexData.windowCount == 2,
-          "Codex direct response is parsed");
-    check(strcmp(codexData.windows[0].label, "5 hours") == 0
-          && strcmp(codexData.windows[1].label, "Week") == 0,
-          "Codex windows receive stable LCD labels");
+    check(parseCodexUsage(codex, codexData, now) && codexData.windowCount == 1,
+          "Codex direct response keeps one window");
+    check(strcmp(codexData.windows[0].label, "Week") == 0
+          && std::abs(codexData.windows[0].percent - 67.5f) < 0.01f,
+          "Codex only keeps the weekly window");
     check(!parseCodexUsage(claude, codexData, now), "provider response shapes are not interchangeable");
 
     StaticJsonDocument<256> invalidPercent;

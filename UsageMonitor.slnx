@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/UsageMonitor.Desktop/UsageMonitor.Desktop.csproj" />
+    <Project Path="src/UsageMonitor.SmallTV.Preview/UsageMonitor.SmallTV.Preview.csproj" />
   </Folder>
 </Solution>

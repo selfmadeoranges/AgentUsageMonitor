@@ -8,4 +8,3 @@ constexpr char WIFI_PASSWORD[] = "";
 constexpr char ADMIN_PASSWORD[] = "";
 constexpr uint8_t LCD_ROTATION = 0;
 constexpr bool LCD_INVERT = true;
-constexpr uint32_t PAGE_INTERVAL_MS = 6000;

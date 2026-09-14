@@ -45,8 +45,8 @@ A DHCP address change is not a fault. The new address appears on the LCD and the
 - Refreshes access tokens on expiry and retries once after HTTP 401/403.
 - Retains the last valid LCD values during network, authentication, parsing, and HTTP 429 failures.
 - Backs off HTTP 429 responses for 2, 5, 10, then 15 minutes.
-- Parses Claude 5-hour, weekly, and up to two model-scoped weekly windows.
-- Parses Codex primary and secondary rate-limit windows.
+- Parses Claude 5-hour and weekly windows, then keeps only the Fable model-scoped weekly window.
+- Selects only the weekly Codex rate-limit window and omits the shorter primary window.
 - Sends the Claude request with a `claude-code/` user agent. The account endpoint otherwise returned a persistent HTTP 429 from the ESP8266 client.
 - Uses HTTP/1.1 and lets ESP8266HTTPClient assemble chunked responses before JSON parsing.
 
@@ -54,7 +54,9 @@ The embedded TLS roots match the endpoint chains observed on 2026-09-14. A later
 
 ### LCD and original Settings features
 
-Claude and Codex pages switch every six seconds. Each page shows usage percentages, progress bars, reset countdowns, provider state, and the assigned IP.
+Claude and Codex pages switch every six seconds. Claude shows 5 hours, Week, and Fable; Codex shows Week only. Each page includes usage percentages, progress bars, reset countdowns, provider state, and the assigned IP.
+
+The main labels and percentages use TFT_eSPI Font 4. Reset countdowns, state, and IP use Font 2 so the three Claude rows remain readable on the physical 240 x 240 panel.
 
 The following items from the original SmallTV settings page are retained. Theme selection and automatic theme switching, the original items 1 and 2, are intentionally omitted.
 
@@ -123,6 +125,20 @@ If either side later reports an authentication error, sign in again on the PC, e
 
 ## Build
 
+### Windows screen preview
+
+The separate WPF preview reproduces the firmware's 240 x 240 coordinates, RGB565 colors, page counter, three usage rows, state line, IP footer, and recovery screen. It offers a DPI-corrected 240 x 240 physical-pixel mode and a 480 x 480 enlarged mode. It uses editable sample values and does not read OAuth credentials or contact the usage providers.
+
+`shared/smalltv-display-layout.json` is the single source for display dimensions, coordinates, RGB565 colors, visible fixed text, and the page interval. The running preview watches that source file and reloads valid edits after a short debounce. An invalid edit leaves the last valid preview visible and reports the parse or validation error. PlatformIO runs `scripts/generate_display_layout.py` before compilation and creates the ignored `GeneratedDisplayLayout.h` from the same JSON.
+
+```powershell
+dotnet run --project src\UsageMonitor.SmallTV.Preview\UsageMonitor.SmallTV.Preview.csproj
+```
+
+The preview uses a Windows font, so glyph shapes and text widths can differ slightly from TFT_eSPI's built-in bitmap fonts. Positions, colors, progress lengths, page order, and visible strings follow `drawUsagePage()` and `drawRecoveryPage()` in the firmware.
+
+### Firmware
+
 ```powershell
 Set-Location firmware\UsageMonitor.SmallTV
 Copy-Item include\SmallTvConfig.example.h include\SmallTvConfig.h
@@ -141,7 +157,7 @@ The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 
 | Backlight, active low | 5 |
 | CS | tied to GND |
 
-The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.5 uses 535,723 bytes of flash and 33,108 bytes of static RAM; the generated BIN is 539,872 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
+The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.7 uses 541,651 bytes of flash and 32,992 bytes of static RAM; the generated BIN is 545,808 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
 
 ## Verification and installation result
 
