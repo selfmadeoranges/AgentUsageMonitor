@@ -24,9 +24,9 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr char FIRMWARE_VERSION[] = "0.2.8";
+constexpr char FIRMWARE_VERSION[] = "0.2.9";
 // 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
-constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.2.8";
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.2.9";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -78,6 +78,8 @@ uint32_t lastPageChangeAt = 0;
 uint32_t lastDrawAt = 0;
 uint32_t restartAt = 0;
 uint32_t nextPollAt[MAX_TOOLS] = {};
+// 마지막 토큰 갱신 요청의 HTTP 코드. 0은 요청 전, -1은 연결 실패다. 상태 페이지에서 원인을 볼 수 있게 남긴다.
+int lastRefreshStatus = 0;
 size_t displayPage = 0;
 size_t nextProvider = 0;
 bool wifiBeginSent = false;
@@ -297,11 +299,21 @@ const __FlashStringHelper* toolStateForWeb(const char* state) {
     if (strcmp(state, "waiting") == 0) return F("조회 대기");
     if (strcmp(state, "ok") == 0) return F("정상");
     if (strcmp(state, "auth_required") == 0) return F("계정 설정 필요");
+    if (strcmp(state, "refresh_failed") == 0) return F("토큰 갱신 실패");
     if (strcmp(state, "auth_error") == 0) return F("인증 오류");
     if (strcmp(state, "rate_limited") == 0) return F("요청 제한");
     if (strcmp(state, "invalid_response") == 0) return F("응답 형식 오류");
     if (strcmp(state, "network_error") == 0) return F("네트워크 오류");
     return F("알 수 없음");
+}
+
+String lastSuccessForWeb(int64_t lastSuccessAt) {
+    if (lastSuccessAt < 0) return F("없음");
+    int64_t elapsed = unixNow() - lastSuccessAt;
+    if (elapsed < 0) return F("방금");
+    if (elapsed < 60) return String(static_cast<long>(elapsed)) + F("초 전");
+    if (elapsed < 3600) return String(static_cast<long>(elapsed / 60)) + F("분 전");
+    return String(static_cast<long>(elapsed / 3600)) + F("시간 ") + String(static_cast<long>((elapsed / 60) % 60)) + F("분 전");
 }
 
 String windowLabelForWeb(const char* label) {
@@ -326,7 +338,11 @@ void handleStatusPage() {
         html += tool.name;
         html += F("</h2><p>상태: <b>");
         html += toolStateForWeb(tool.state);
-        html += F("</b></p><table>");
+        html += F("</b></p><p class=muted>HTTP ");
+        html += tool.httpStatus;
+        html += F(" · 마지막 성공 ");
+        html += lastSuccessForWeb(tool.lastSuccessAt);
+        html += F("</p><table>");
         for (size_t j = 0; j < tool.windowCount; j++) {
             html += F("<tr><td>"); html += windowLabelForWeb(tool.windows[j].label); html += F("</td><td>");
             html += String(tool.windows[j].percent, 0); html += F("%</td></tr>");
@@ -729,9 +745,11 @@ bool readJsonResponse(HTTPClient& http, DynamicJsonDocument& document) {
 }
 
 bool refreshClaudeToken() {
+    lastRefreshStatus = 0;
     if (claudeCredentials.refreshToken.isEmpty()) return false;
     BearSSL::WiFiClientSecure client;
     HTTPClient http;
+    lastRefreshStatus = -1;
     if (!beginSecureRequest(client, http, CLAUDE_TOKEN_URL)) return false;
     DynamicJsonDocument request(claudeCredentials.refreshToken.length() + 512);
     request["grant_type"] = "refresh_token";
@@ -741,6 +759,7 @@ bool refreshClaudeToken() {
     serializeJson(request, payload);
     http.addHeader(F("Content-Type"), F("application/json"));
     int status = http.POST(payload);
+    lastRefreshStatus = status;
     DynamicJsonDocument response(12288);
     bool parsed = status == HTTP_CODE_OK && readJsonResponse(http, response);
     if (parsed) {
@@ -760,9 +779,11 @@ bool refreshClaudeToken() {
 }
 
 bool refreshCodexToken() {
+    lastRefreshStatus = 0;
     if (codexCredentials.refreshToken.isEmpty()) return false;
     BearSSL::WiFiClientSecure client;
     HTTPClient http;
+    lastRefreshStatus = -1;
     if (!beginSecureRequest(client, http, CODEX_TOKEN_URL)) return false;
     http.addHeader(F("Content-Type"), F("application/x-www-form-urlencoded"));
     String payload = F("grant_type=refresh_token&client_id=");
@@ -771,6 +792,7 @@ bool refreshCodexToken() {
     payload += urlEncode(codexCredentials.refreshToken);
     payload += F("&scope=openid%20profile%20email");
     int status = http.POST(payload);
+    lastRefreshStatus = status;
     DynamicJsonDocument response(12288);
     bool parsed = status == HTTP_CODE_OK && readJsonResponse(http, response);
     if (parsed) {
@@ -800,8 +822,14 @@ bool ensureAccessToken(size_t provider) {
 int queryUsage(size_t provider, bool allowRefresh) {
     ToolData& tool = usage.tools[provider];
     ProviderCredentials& credentials = provider == 0 ? claudeCredentials : codexCredentials;
-    if (!ensureAccessToken(provider) || (provider == 1 && credentials.accountId.isEmpty())) {
+    bool hasCredentials = !credentials.accessToken.isEmpty() || !credentials.refreshToken.isEmpty();
+    if (!hasCredentials || (provider == 1 && credentials.accountId.isEmpty())) {
         setToolError(tool, "auth_required", 0, unixNow());
+        return 0;
+    }
+    // 자격 증명은 있는데 갱신이 거부된 경우. PC가 먼저 갱신해 리프레시 토큰이 무효화됐을 때 주로 발생한다.
+    if (!ensureAccessToken(provider)) {
+        setToolError(tool, "refresh_failed", lastRefreshStatus, unixNow());
         return 0;
     }
     BearSSL::WiFiClientSecure client;
@@ -923,6 +951,7 @@ void drawUsagePage(bool clear) {
         const char* message = DisplayLayout::UsageUnavailableText;
         if (!timeReady()) message = DisplayLayout::SynchronizingTimeText;
         else if (strcmp(tool.state, "auth_required") == 0) message = DisplayLayout::ConfigureAccountText;
+        else if (strcmp(tool.state, "refresh_failed") == 0) message = DisplayLayout::RefreshFailedText;
         else if (strcmp(tool.state, "waiting") == 0) message = DisplayLayout::LoadingUsageText;
         else if (strcmp(tool.state, "rate_limited") == 0) message = DisplayLayout::RetryingLaterText;
         drawLayoutText(DisplayLayout::UsageEmptyX, DisplayLayout::UsageEmptyY, message, DisplayLayout::MutedColor,
@@ -933,6 +962,7 @@ void drawUsagePage(bool clear) {
     const char* state = strcmp(tool.state, "ok") == 0 && stale ? DisplayLayout::StateStaleText : tool.state;
     if (strcmp(state, "rate_limited") == 0) state = DisplayLayout::StateRateLimitedText;
     else if (strcmp(state, "auth_required") == 0) state = DisplayLayout::StateAuthRequiredText;
+    else if (strcmp(state, "refresh_failed") == 0) state = DisplayLayout::StateRefreshFailedText;
     else if (strcmp(state, "network_error") == 0) state = DisplayLayout::StateNetworkErrorText;
     else if (strcmp(state, "invalid_response") == 0) state = DisplayLayout::StateInvalidResponseText;
     drawLayoutText(DisplayLayout::UsageFooterStateX, DisplayLayout::UsageFooterStateY, state,

@@ -43,6 +43,7 @@ A DHCP address change is not a fault. The new address appears on the LCD and the
 - Validates server certificates. TLS verification is not disabled.
 - Polls Claude and Codex sequentially to keep ESP8266 peak memory use bounded.
 - Refreshes access tokens on expiry and retries once after HTTP 401/403.
+- Reports `auth_required` (LCD: `Configure account`) only when no credentials are stored. A stored refresh token that the provider rejects is reported as `refresh_failed` (LCD: `Sign in again`, footer `REFRESH FAILED`) with the token endpoint HTTP code in `/status.json` and on `/`, so a revoked token is not mistaken for a missing account.
 - Retains the last valid LCD values during network, authentication, parsing, and HTTP 429 failures.
 - Backs off HTTP 429 responses for 2, 5, 10, then 15 minutes.
 - Parses Claude 5-hour and weekly windows, then keeps only the Fable model-scoped weekly window.
@@ -121,7 +122,7 @@ Individual fields are also available on `/accounts.html`. Codex requires the acc
 
 The current provisioning method copies an existing refresh token; it does not create a separate OAuth session for the device. The PC and SmallTV can therefore initially hold the same refresh-token value. If a provider rotates the token and invalidates the previous value, the first client to refresh may leave the other client with a stale token. Simultaneous long-term refresh by both clients has not yet been verified.
 
-If either side later reports an authentication error, sign in again on the PC, export a fresh bundle, and provision SmallTV again. A future device-specific OAuth provisioning flow would be required to give the PC and SmallTV independently managed sessions.
+If SmallTV shows `Sign in again` (`refresh_failed`, usually HTTP 400 or 401 from the token endpoint), or either side reports an authentication error, sign in again on the PC, export a fresh bundle, and provision SmallTV again. Turning off that provider in the desktop tray menu (`Claude 표시` / `Codex 표시`) stops the PC from refreshing the token, which leaves SmallTV as its only user. A future device-specific OAuth provisioning flow would be required to give the PC and SmallTV independently managed sessions.
 
 ## Build
 
@@ -156,7 +157,7 @@ The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 
 | Backlight, active low | 5 |
 | CS | tied to GND |
 
-The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.8 uses 541,727 bytes of flash and 33,008 bytes of static RAM; the generated BIN is 545,872 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
+The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.9 uses 542,487 bytes of flash and 33,060 bytes of static RAM; the generated BIN is 546,640 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
 
 ## Verification and installation result
 
@@ -173,7 +174,7 @@ Verified on 2026-09-14:
 
 Still requiring longer or manual hardware validation:
 
-- Firmware 0.2.8 (honest `UsageMonitor-SmallTV/0.2.8` user agent for all requests) has been built but has not been flashed yet. Confirm that the Claude endpoint still returns HTTP 200 without the `claude-code/` user agent before relying on the device for Claude usage.
+- Firmware 0.2.9 (honest `UsageMonitor-SmallTV/<version>` user agent since 0.2.8, and the separate `refresh_failed` state since 0.2.9) has been built but has not been flashed yet. Confirm that the Claude endpoint still returns HTTP 200 without the `claude-code/` user agent before relying on the device for Claude usage.
 - OAuth token rotation after the current access tokens expire
 - Connection to the recovery SSID and captive-portal redirect from a second client
 - mDNS discovery, night brightness transitions, and long-running heap/network stability

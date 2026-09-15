@@ -46,6 +46,7 @@
                     <ComboBoxItem Tag="ok">정상</ComboBoxItem>
                     <ComboBoxItem Tag="stale">오래된 값</ComboBoxItem>
                     <ComboBoxItem Tag="auth_required">계정 설정 필요</ComboBoxItem>
+                    <ComboBoxItem Tag="refresh_failed">토큰 갱신 실패</ComboBoxItem>
                     <ComboBoxItem Tag="rate_limited">요청 제한</ComboBoxItem>
                     <ComboBoxItem Tag="network_error">네트워크 오류</ComboBoxItem>
                     <ComboBoxItem Tag="invalid_response">응답 형식 오류</ComboBoxItem>

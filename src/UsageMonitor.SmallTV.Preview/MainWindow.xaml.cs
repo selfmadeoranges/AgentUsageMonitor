@@ -208,7 +208,7 @@ public partial class MainWindow : Window
         TextPosition counter = _layout.UsagePage.Counter;
         UsageRowDefinition row = _layout.UsagePage.Row;
         FooterDefinition footer = _layout.UsagePage.Footer;
-        int windowCount = state is "auth_required" or "waiting" ? 0 : Math.Min(Math.Min(labels.Length, percentages.Count), row.Count);
+        int windowCount = state is "auth_required" or "refresh_failed" or "waiting" ? 0 : Math.Min(Math.Min(labels.Length, percentages.Count), row.Count);
 
         AddText(title.X, title.Y, provider, WhiteBrush, FontSizeFor(title.Font, title.Scale), FontWeights.SemiBold);
         AddText(counter.X, counter.Y, provider == "Claude" ? "1/2" : "2/2", _mutedBrush,
@@ -240,6 +240,7 @@ public partial class MainWindow : Window
             string message = state switch
             {
                 "auth_required" => _layout.Text.ConfigureAccount,
+                "refresh_failed" => _layout.Text.RefreshFailed,
                 "waiting" => _layout.Text.LoadingUsage,
                 "rate_limited" => _layout.Text.RetryingLater,
                 _ => _layout.Text.UsageUnavailable,
@@ -307,6 +308,7 @@ public partial class MainWindow : Window
             "stale" => _layout.Text.StateStale,
             "rate_limited" => _layout.Text.StateRateLimited,
             "auth_required" => _layout.Text.StateAuthRequired,
+            "refresh_failed" => _layout.Text.StateRefreshFailed,
             "network_error" => _layout.Text.StateNetworkError,
             "invalid_response" => _layout.Text.StateInvalidResponse,
             _ => state,

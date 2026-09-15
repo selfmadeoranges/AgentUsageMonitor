@@ -64,11 +64,13 @@
     "usageUnavailable": "Usage unavailable",
     "synchronizingTime": "Synchronizing time",
     "configureAccount": "Configure account",
+    "refreshFailed": "Sign in again",
     "loadingUsage": "Loading usage",
     "retryingLater": "Retrying later",
     "stateStale": "STALE",
     "stateRateLimited": "RATE LIMITED",
     "stateAuthRequired": "AUTH REQUIRED",
+    "stateRefreshFailed": "REFRESH FAILED",
     "stateNetworkError": "NETWORK ERROR",
     "stateInvalidResponse": "BAD RESPONSE",
     "ipPrefix": "IP "

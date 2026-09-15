@@ -61,11 +61,13 @@ internal sealed class DisplayLayout
             result.Text.UsageUnavailable,
             result.Text.SynchronizingTime,
             result.Text.ConfigureAccount,
+            result.Text.RefreshFailed,
             result.Text.LoadingUsage,
             result.Text.RetryingLater,
             result.Text.StateStale,
             result.Text.StateRateLimited,
             result.Text.StateAuthRequired,
+            result.Text.StateRefreshFailed,
             result.Text.StateNetworkError,
             result.Text.StateInvalidResponse,
             result.Text.IpPrefix,
@@ -195,11 +197,13 @@ internal sealed class TextDefinition
     public string UsageUnavailable { get; set; } = "";
     public string SynchronizingTime { get; set; } = "";
     public string ConfigureAccount { get; set; } = "";
+    public string RefreshFailed { get; set; } = "";
     public string LoadingUsage { get; set; } = "";
     public string RetryingLater { get; set; } = "";
     public string StateStale { get; set; } = "";
     public string StateRateLimited { get; set; } = "";
     public string StateAuthRequired { get; set; } = "";
+    public string StateRefreshFailed { get; set; } = "";
     public string StateNetworkError { get; set; } = "";
     public string StateInvalidResponse { get; set; } = "";
     public string IpPrefix { get; set; } = "";
