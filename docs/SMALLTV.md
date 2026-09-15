@@ -67,7 +67,9 @@ The following items from the original SmallTV settings page are retained. Theme 
 - Reboot
 - Firmware update
 
-The settings page also includes UTC offset and usage refresh interval because night mode and API polling need them.
+The settings page also includes UTC offset, usage refresh interval, and the Claude/Codex page switch interval (2-60 seconds; the default comes from `pageIntervalMs` in the shared layout file).
+
+The LCD is repainted once per second, but since 0.3.5 only elements whose text, color, or bar length actually changed are redrawn, using TFT_eSPI text padding to erase the previous glyphs instead of clearing whole regions first. A full clear happens only on a page switch or when returning from the recovery screen. The backlight PWM is rewritten only when the computed brightness changes, because the ESP8266 core rebuilds the PWM waveform on every `analogWrite` call. Together these remove the once-per-second flicker that earlier builds showed.
 
 ## HTTP web interface
 
@@ -167,7 +169,7 @@ The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 
 | Backlight, active low | 5 |
 | CS | tied to GND |
 
-The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.3.4 uses 552,915 bytes of flash and 33,764 bytes of static RAM; the generated BIN is 557,072 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
+The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.3.5 uses 554,711 bytes of flash and 34,156 bytes of static RAM; the generated BIN is 558,864 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
 
 ## Verification and installation result
 

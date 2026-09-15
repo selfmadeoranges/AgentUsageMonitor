@@ -25,9 +25,9 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr char FIRMWARE_VERSION[] = "0.3.4";
+constexpr char FIRMWARE_VERSION[] = "0.3.5";
 // 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
-constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.4";
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.5";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -59,6 +59,8 @@ struct DeviceSettings {
     String password;
     uint16_t wifiDelaySeconds = 0;
     uint16_t refreshSeconds = 120;
+    // Claude/Codex 페이지 전환 간격. 기본값은 공용 레이아웃 JSON에서 온다.
+    uint16_t pageIntervalSeconds = static_cast<uint16_t>(DisplayLayout::PageIntervalMs / 1000);
     uint8_t brightness = 190;
     bool nightEnabled = false;
     uint8_t nightStartHour = 22;
@@ -154,7 +156,12 @@ void applyBrightness() {
             : valueLocal.tm_hour >= settings.nightStartHour || valueLocal.tm_hour < settings.nightEndHour;
         if (night) value = settings.nightBrightness;
     }
-    analogWrite(BACKLIGHT_PIN, 255 - value);
+    // 같은 값을 다시 써도 ESP8266 코어는 PWM 파형을 재구성해 백라이트가 순간 튄다. 값이 바뀔 때만 쓴다.
+    static int lastOutput = -1;
+    int output = 255 - value;
+    if (output == lastOutput) return;
+    lastOutput = output;
+    analogWrite(BACKLIGHT_PIN, output);
 }
 
 bool ensureFileSystemForWrite() {
@@ -199,10 +206,11 @@ void loadSettings() {
     long nightEnd = document["nightEndHour"] | 7;
     long nightBrightness = document["nightBrightness"] | 40;
     long utcOffset = document["utcOffsetHours"] | 9;
+    long pageInterval = document["pageIntervalSeconds"] | static_cast<long>(DisplayLayout::PageIntervalMs / 1000);
     if ((!ssid.isEmpty() && !isValidWifiSsid(ssid.c_str())) || !isValidWifiPassword(password.c_str())
         || !isValidWifiDelay(wifiDelay) || !isValidRefreshSeconds(refresh) || !isValidBrightness(brightness)
         || !isValidHour(nightStart) || !isValidHour(nightEnd) || !isValidBrightness(nightBrightness)
-        || !isValidUtcOffset(utcOffset)) return;
+        || !isValidUtcOffset(utcOffset) || !isValidPageIntervalSeconds(pageInterval)) return;
     settings.ssid = ssid;
     settings.password = password;
     settings.wifiDelaySeconds = static_cast<uint16_t>(wifiDelay);
@@ -213,6 +221,7 @@ void loadSettings() {
     settings.nightEndHour = static_cast<uint8_t>(nightEnd);
     settings.nightBrightness = static_cast<uint8_t>(nightBrightness);
     settings.utcOffsetHours = static_cast<int8_t>(utcOffset);
+    settings.pageIntervalSeconds = static_cast<uint16_t>(pageInterval);
 }
 
 bool saveSettings() {
@@ -228,6 +237,7 @@ bool saveSettings() {
     document["nightEndHour"] = settings.nightEndHour;
     document["nightBrightness"] = settings.nightBrightness;
     document["utcOffsetHours"] = settings.utcOffsetHours;
+    document["pageIntervalSeconds"] = settings.pageIntervalSeconds;
     return writeJsonAtomically("/settings.json", document);
 }
 
@@ -797,6 +807,7 @@ void handleSettingsPage() {
     html += F("'></label><label>야간 밝기<input type=range name=night_brightness min=0 max=255 value='"); html += settings.nightBrightness;
     html += F("'></label><label>UTC 오프셋 (-12~14)<input type=number name=utc min=-12 max=14 value='"); html += settings.utcOffsetHours;
     html += F("'></label><label>사용량 갱신 주기 (초, 60~3600)<input type=number name=refresh min=60 max=3600 value='"); html += settings.refreshSeconds;
+    html += F("'></label><label>Claude/Codex 페이지 전환 시간 (초, 2~60)<input type=number name=page_interval min=2 max=60 value='"); html += settings.pageIntervalSeconds;
     html += F("'></label><button type=submit>저장</button></form></section>"
         "<section><h2>5. 공장 초기화</h2><p>Wi-Fi, 화면 설정과 계정 인증 정보를 모두 삭제합니다.</p>"
         "<form method=post action=/factory-reset onsubmit=\"return confirm('모든 설정을 삭제하시겠습니까?')\"><button class=danger>초기화</button></form></section>"
@@ -859,8 +870,10 @@ void handleSaveDisplay() {
     long nightBrightness = webServer.arg("night_brightness").toInt();
     long utc = webServer.arg("utc").toInt();
     long refresh = webServer.arg("refresh").toInt();
+    long pageInterval = webServer.arg("page_interval").toInt();
     if (!isValidBrightness(brightness) || !isValidHour(start) || !isValidHour(end)
-        || !isValidBrightness(nightBrightness) || !isValidUtcOffset(utc) || !isValidRefreshSeconds(refresh)) {
+        || !isValidBrightness(nightBrightness) || !isValidUtcOffset(utc) || !isValidRefreshSeconds(refresh)
+        || !isValidPageIntervalSeconds(pageInterval)) {
         webServer.send(400, F("text/plain; charset=utf-8"), F("화면 설정이 올바르지 않습니다."));
         return;
     }
@@ -871,6 +884,7 @@ void handleSaveDisplay() {
     settings.nightBrightness = static_cast<uint8_t>(nightBrightness);
     settings.utcOffsetHours = static_cast<int8_t>(utc);
     settings.refreshSeconds = static_cast<uint16_t>(refresh);
+    settings.pageIntervalSeconds = static_cast<uint16_t>(pageInterval);
     if (!saveSettings()) {
         webServer.send(500, F("text/plain; charset=utf-8"), F("설정을 저장하지 못했습니다."));
         return;
@@ -1318,48 +1332,127 @@ void drawRecoveryPage() {
         DisplayLayout::MutedColor, DisplayLayout::RecoveryUserFont, DisplayLayout::RecoveryUserScale);
 }
 
+// 마지막으로 화면에 그린 내용. 1초 루프에서는 이것과 달라진 요소만 다시 그려 깜빡임을 없앤다.
+// 페이지가 바뀌거나 복구 화면에서 돌아올 때만 전체를 지우고 캐시를 비운다.
+struct DrawnText {
+    bool drawn = false;
+    String text;
+    uint16_t color = 0;
+};
+
+struct DrawnBar {
+    bool drawn = false;
+    int width = -1;
+    uint16_t color = 0;
+};
+
+struct DrawnPage {
+    DrawnText title;
+    DrawnText counter;
+    bool rowVisible[MAX_WINDOWS] = {};
+    DrawnText label[MAX_WINDOWS];
+    DrawnText percent[MAX_WINDOWS];
+    DrawnBar bar[MAX_WINDOWS];
+    DrawnText countdown[MAX_WINDOWS];
+    DrawnText message;
+    DrawnText state;
+    DrawnText ip;
+};
+DrawnPage drawnPage;
+
+// 퍼센트 글자("100%", Font 4)가 차지하는 폭. 라벨 패딩과 퍼센트 패딩이 겹치지 않도록 나눈다.
+constexpr int PercentTextWidth = 60;
+
+/// 이전에 그린 것과 다를 때만 글자를 다시 쓴다. 패딩 폭만큼 배경색을 함께 채워 이전 글자의 잔상을 지운다.
+void drawTextIfChanged(DrawnText& drawn, const char* text, uint16_t color, int x, int y, int font, int scale,
+    int padding, bool alignRight = false) {
+    if (drawn.drawn && drawn.color == color && drawn.text == text) return;
+    drawn.drawn = true;
+    drawn.text = text;
+    drawn.color = color;
+    tft.setTextSize(scale);
+    tft.setTextPadding(padding);
+    tft.setTextColor(color, DisplayLayout::BackgroundColor);
+    if (alignRight) tft.drawRightString(text, x, y, font);
+    else tft.drawString(text, x, y, font);
+    tft.setTextPadding(0);
+    tft.setTextSize(1);
+}
+
+void drawBarIfChanged(DrawnBar& drawn, int y, int fillWidth, uint16_t color) {
+    if (drawn.drawn && drawn.width == fillWidth && drawn.color == color) return;
+    drawn.drawn = true;
+    drawn.width = fillWidth;
+    drawn.color = color;
+    tft.fillRect(DisplayLayout::UsageRowBarX, y, DisplayLayout::UsageRowBarWidth, DisplayLayout::UsageRowBarHeight,
+        DisplayLayout::PanelColor);
+    if (fillWidth > 0) tft.fillRect(DisplayLayout::UsageRowBarX, y, fillWidth, DisplayLayout::UsageRowBarHeight, color);
+}
+
 void drawUsagePage(bool clear) {
     if (recoveryActive && WiFi.status() != WL_CONNECTED) {
         if (clear || !recoveryDrawn) drawRecoveryPage();
         recoveryDrawn = true;
         return;
     }
+    // 복구 화면이 덮어썼다면 사용량 화면 전체를 다시 그려야 한다.
+    if (recoveryDrawn) clear = true;
     recoveryDrawn = false;
-    if (clear) tft.fillScreen(DisplayLayout::BackgroundColor);
+    if (clear) {
+        tft.fillScreen(DisplayLayout::BackgroundColor);
+        drawnPage = DrawnPage();
+    }
     ToolData& tool = usage.tools[displayPage];
     int64_t now = unixNow();
     bool stale = tool.lastSuccessAt < 0 || now < 0 || now - tool.lastSuccessAt > settings.refreshSeconds * 2 + 30;
-    tft.fillRect(0, 0, DisplayLayout::Width, DisplayLayout::UsageRowY - 2, DisplayLayout::BackgroundColor);
-    drawLayoutText(DisplayLayout::UsageTitleX, DisplayLayout::UsageTitleY, tool.name, TFT_WHITE,
-        DisplayLayout::UsageTitleFont, DisplayLayout::UsageTitleScale);
+
+    drawTextIfChanged(drawnPage.title, tool.name, TFT_WHITE, DisplayLayout::UsageTitleX, DisplayLayout::UsageTitleY,
+        DisplayLayout::UsageTitleFont, DisplayLayout::UsageTitleScale, DisplayLayout::UsageCounterX - DisplayLayout::UsageTitleX - 4);
     char counter[8];
     snprintf(counter, sizeof(counter), "%u/2", static_cast<unsigned>(displayPage + 1));
-    drawLayoutText(DisplayLayout::UsageCounterX, DisplayLayout::UsageCounterY, counter, DisplayLayout::MutedColor,
-        DisplayLayout::UsageCounterFont, DisplayLayout::UsageCounterScale);
-    for (size_t i = 0; i < DisplayLayout::UsageRowCount; i++) {
+    drawTextIfChanged(drawnPage.counter, counter, DisplayLayout::MutedColor, DisplayLayout::UsageCounterX,
+        DisplayLayout::UsageCounterY, DisplayLayout::UsageCounterFont, DisplayLayout::UsageCounterScale,
+        DisplayLayout::Width - DisplayLayout::UsageCounterX);
+
+    // 빈 메시지와 행은 같은 영역을 쓴다. 지우기를 모두 끝낸 뒤에 그려야 서로를 덮지 않는다.
+    if (tool.windowCount > 0 && drawnPage.message.drawn) {
+        tft.fillRect(DisplayLayout::UsageEmptyX, DisplayLayout::UsageEmptyY, DisplayLayout::Width - DisplayLayout::UsageEmptyX,
+            tft.fontHeight(DisplayLayout::UsageEmptyFont) * DisplayLayout::UsageEmptyScale, DisplayLayout::BackgroundColor);
+        drawnPage.message = DrawnText();
+    }
+    for (size_t i = 0; i < DisplayLayout::UsageRowCount && i < MAX_WINDOWS; i++) {
+        if (i < tool.windowCount || !drawnPage.rowVisible[i]) continue;
         int y = DisplayLayout::UsageRowY + static_cast<int>(i) * DisplayLayout::UsageRowStep;
         tft.fillRect(DisplayLayout::UsageRowX, y, DisplayLayout::UsageRowWidth, DisplayLayout::UsageRowHeight,
             DisplayLayout::BackgroundColor);
-        if (i >= tool.windowCount) continue;
+        drawnPage.rowVisible[i] = false;
+        drawnPage.label[i] = DrawnText();
+        drawnPage.percent[i] = DrawnText();
+        drawnPage.bar[i] = DrawnBar();
+        drawnPage.countdown[i] = DrawnText();
+    }
+
+    for (size_t i = 0; i < DisplayLayout::UsageRowCount && i < MAX_WINDOWS && i < tool.windowCount; i++) {
+        int y = DisplayLayout::UsageRowY + static_cast<int>(i) * DisplayLayout::UsageRowStep;
+        drawnPage.rowVisible[i] = true;
         WindowData& window = tool.windows[i];
         uint16_t color = stale ? DisplayLayout::MutedColor : window.percent >= 95 ? DisplayLayout::RedColor
             : window.percent >= 70 ? DisplayLayout::OrangeColor : DisplayLayout::GreenColor;
-        drawLayoutText(DisplayLayout::UsageRowLabelX, y + DisplayLayout::UsageRowLabelOffsetY, window.label,
-            TFT_WHITE, DisplayLayout::UsageRowLabelFont);
+        drawTextIfChanged(drawnPage.label[i], window.label, TFT_WHITE, DisplayLayout::UsageRowLabelX,
+            y + DisplayLayout::UsageRowLabelOffsetY, DisplayLayout::UsageRowLabelFont, 1,
+            DisplayLayout::UsageRowPercentRight - PercentTextWidth - DisplayLayout::UsageRowLabelX - 4);
         char percent[12];
         snprintf(percent, sizeof(percent), "%.0f%%", static_cast<double>(window.percent));
-        tft.setTextColor(color, DisplayLayout::BackgroundColor);
-        tft.drawRightString(percent, DisplayLayout::UsageRowPercentRight,
-            y + DisplayLayout::UsageRowPercentOffsetY, DisplayLayout::UsageRowPercentFont);
-        tft.fillRect(DisplayLayout::UsageRowBarX, y + DisplayLayout::UsageRowBarOffsetY,
-            DisplayLayout::UsageRowBarWidth, DisplayLayout::UsageRowBarHeight, DisplayLayout::PanelColor);
-        tft.fillRect(DisplayLayout::UsageRowBarX, y + DisplayLayout::UsageRowBarOffsetY,
-            static_cast<int>(DisplayLayout::UsageRowBarWidth * window.percent / 100), DisplayLayout::UsageRowBarHeight, color);
+        drawTextIfChanged(drawnPage.percent[i], percent, color, DisplayLayout::UsageRowPercentRight,
+            y + DisplayLayout::UsageRowPercentOffsetY, DisplayLayout::UsageRowPercentFont, 1, PercentTextWidth, true);
+        drawBarIfChanged(drawnPage.bar[i], y + DisplayLayout::UsageRowBarOffsetY,
+            static_cast<int>(DisplayLayout::UsageRowBarWidth * window.percent / 100), color);
         char resetText[32];
         int64_t resetSeconds = window.resetAt < 0 || now < 0 ? -1 : window.resetAt > now ? window.resetAt - now : 0;
         formatCountdown(resetText, sizeof(resetText), resetSeconds);
-        drawLayoutText(DisplayLayout::UsageRowCountdownX, y + DisplayLayout::UsageRowCountdownOffsetY, resetText,
-            DisplayLayout::MutedColor, DisplayLayout::UsageRowCountdownFont);
+        drawTextIfChanged(drawnPage.countdown[i], resetText, DisplayLayout::MutedColor, DisplayLayout::UsageRowCountdownX,
+            y + DisplayLayout::UsageRowCountdownOffsetY, DisplayLayout::UsageRowCountdownFont, 1,
+            DisplayLayout::UsageRowX + DisplayLayout::UsageRowWidth - DisplayLayout::UsageRowCountdownX);
     }
     if (tool.windowCount == 0) {
         const char* message = DisplayLayout::UsageUnavailableText;
@@ -1368,25 +1461,24 @@ void drawUsagePage(bool clear) {
         else if (strcmp(tool.state, "refresh_failed") == 0) message = DisplayLayout::RefreshFailedText;
         else if (strcmp(tool.state, "waiting") == 0) message = DisplayLayout::LoadingUsageText;
         else if (strcmp(tool.state, "rate_limited") == 0) message = DisplayLayout::RetryingLaterText;
-        drawLayoutText(DisplayLayout::UsageEmptyX, DisplayLayout::UsageEmptyY, message, DisplayLayout::MutedColor,
-            DisplayLayout::UsageEmptyFont, DisplayLayout::UsageEmptyScale);
+        drawTextIfChanged(drawnPage.message, message, DisplayLayout::MutedColor, DisplayLayout::UsageEmptyX,
+            DisplayLayout::UsageEmptyY, DisplayLayout::UsageEmptyFont, DisplayLayout::UsageEmptyScale,
+            DisplayLayout::Width - DisplayLayout::UsageEmptyX);
     }
-    tft.fillRect(DisplayLayout::UsageFooterX, DisplayLayout::UsageFooterY, DisplayLayout::UsageFooterWidth,
-        DisplayLayout::UsageFooterHeight, DisplayLayout::BackgroundColor);
+
     const char* state = strcmp(tool.state, "ok") == 0 && stale ? DisplayLayout::StateStaleText : tool.state;
     if (strcmp(state, "rate_limited") == 0) state = DisplayLayout::StateRateLimitedText;
     else if (strcmp(state, "auth_required") == 0) state = DisplayLayout::StateAuthRequiredText;
     else if (strcmp(state, "refresh_failed") == 0) state = DisplayLayout::StateRefreshFailedText;
     else if (strcmp(state, "network_error") == 0) state = DisplayLayout::StateNetworkErrorText;
     else if (strcmp(state, "invalid_response") == 0) state = DisplayLayout::StateInvalidResponseText;
-    drawLayoutText(DisplayLayout::UsageFooterStateX, DisplayLayout::UsageFooterStateY, state,
-        strcmp(state, "ok") == 0 ? DisplayLayout::MutedColor : DisplayLayout::OrangeColor,
-        DisplayLayout::UsageFooterStateFont);
-    String ip = currentIpText();
+    drawTextIfChanged(drawnPage.state, state, strcmp(state, "ok") == 0 ? DisplayLayout::MutedColor : DisplayLayout::OrangeColor,
+        DisplayLayout::UsageFooterStateX, DisplayLayout::UsageFooterStateY, DisplayLayout::UsageFooterStateFont, 1,
+        DisplayLayout::Width - DisplayLayout::UsageFooterStateX);
     String footer = DisplayLayout::IpPrefixText;
-    footer += ip;
-    drawLayoutText(DisplayLayout::UsageFooterIpX, DisplayLayout::UsageFooterIpY, footer.c_str(),
-        DisplayLayout::MutedColor, DisplayLayout::UsageFooterIpFont);
+    footer += currentIpText();
+    drawTextIfChanged(drawnPage.ip, footer.c_str(), DisplayLayout::MutedColor, DisplayLayout::UsageFooterIpX,
+        DisplayLayout::UsageFooterIpY, DisplayLayout::UsageFooterIpFont, 1, DisplayLayout::Width - DisplayLayout::UsageFooterIpX);
 }
 
 void beginWifiIfDue(uint32_t now) {
@@ -1457,7 +1549,7 @@ void loop() {
         }
     }
     now = millis();
-    bool pageChanged = now - lastPageChangeAt >= DisplayLayout::PageIntervalMs;
+    bool pageChanged = now - lastPageChangeAt >= settings.pageIntervalSeconds * 1000UL;
     if (pageChanged) {
         lastPageChangeAt = now;
         displayPage = (displayPage + 1) % MAX_TOOLS;

@@ -72,6 +72,9 @@ int main() {
           "usage refresh range is enforced");
     check(isValidBrightness(0) && isValidBrightness(255) && !isValidBrightness(256),
           "brightness range is enforced");
+    check(isValidPageIntervalSeconds(2) && isValidPageIntervalSeconds(60)
+          && !isValidPageIntervalSeconds(1) && !isValidPageIntervalSeconds(61),
+          "page interval range is enforced");
     check(isValidHour(0) && isValidHour(23) && !isValidHour(24)
           && isValidUtcOffset(9) && !isValidUtcOffset(15),
           "night schedule ranges are enforced");

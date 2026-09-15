@@ -21,6 +21,10 @@ inline bool isValidRefreshSeconds(long value) {
     return value >= 60 && value <= 3600;
 }
 
+inline bool isValidPageIntervalSeconds(long value) {
+    return value >= 2 && value <= 60;
+}
+
 inline bool isValidBrightness(long value) {
     return value >= 0 && value <= 255;
 }
