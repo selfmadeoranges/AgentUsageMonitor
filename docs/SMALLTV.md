@@ -103,6 +103,8 @@ The desktop and device roles are:
 - SmallTV saves the imported credentials as `/claude.json` and `/codex.json` in LittleFS. It does not contact the desktop app during normal operation.
 - Before an access token expires, or after HTTP 401/403, SmallTV uses the saved refresh token, saves any returned replacement tokens, and retries the usage request once.
 
+Claude can also sign in directly from the device page, which gives SmallTV its own OAuth session (see Browser login below). The export bundle remains the way to provision Codex.
+
 1. Complete Claude and Codex login in the existing Windows UsageMonitor.
 2. Run the export helper locally. It refuses to print secrets unless the explicit switch is present:
 
@@ -118,9 +120,15 @@ The helper reads `UsageMonitor/ClaudeOAuth` and `UsageMonitor/CodexOAuth` from W
 
 Individual fields are also available on `/accounts.html`. Codex requires the access token, refresh token, and ChatGPT account ID. An expiry of `0` means the access token is tried until the server rejects it, after which the refresh token is used.
 
+### Browser login for Claude
+
+`/accounts.html` has a **Claude 로그인 시작** button. The device generates a PKCE verifier and state, keeps them in RAM for ten minutes, and shows the `claude.ai/oauth/authorize` URL. Open that URL in any browser on the same person's PC or phone and sign in. The client ID only allows the `http://localhost:54545/callback` redirect, so the browser ends on a "cannot connect" page; copy the full address from the address bar and paste it into the **콜백 URL** field. The device checks the state, exchanges the code at `console.anthropic.com/v1/oauth/token` with its own verifier, saves the tokens to `/claude.json`, and polls Claude immediately. The code is single-use: if the exchange fails, start again.
+
+Because the verifier never leaves the device, the pasted code is useless without it, and the device ends up with a refresh token that no other client holds.
+
 ### Refresh-token ownership
 
-The current provisioning method copies an existing refresh token; it does not create a separate OAuth session for the device. The PC and SmallTV can therefore initially hold the same refresh-token value. If a provider rotates the token and invalidates the previous value, the first client to refresh may leave the other client with a stale token. Simultaneous long-term refresh by both clients has not yet been verified.
+The export-bundle method copies an existing refresh token; it does not create a separate OAuth session for the device. Browser login (Claude only, above) avoids this. The PC and SmallTV can therefore initially hold the same refresh-token value. If a provider rotates the token and invalidates the previous value, the first client to refresh may leave the other client with a stale token. Simultaneous long-term refresh by both clients has not yet been verified.
 
 If SmallTV shows `Sign in again` (`refresh_failed`, usually HTTP 400 or 401 from the token endpoint), or either side reports an authentication error, sign in again on the PC, export a fresh bundle, and provision SmallTV again. Turning off that provider in the desktop tray menu (`Claude 표시` / `Codex 표시`) stops the PC from refreshing the token, which leaves SmallTV as its only user. A future device-specific OAuth provisioning flow would be required to give the PC and SmallTV independently managed sessions.
 
@@ -157,7 +165,7 @@ The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 
 | Backlight, active low | 5 |
 | CS | tied to GND |
 
-The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.2.9 uses 542,487 bytes of flash and 33,060 bytes of static RAM; the generated BIN is 546,640 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
+The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.3.0 uses 547,415 bytes of flash and 33,388 bytes of static RAM; the generated BIN is 551,568 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
 
 ## Verification and installation result
 
@@ -174,7 +182,7 @@ Verified on 2026-09-14:
 
 Still requiring longer or manual hardware validation:
 
-- Firmware 0.2.9 (honest `UsageMonitor-SmallTV/<version>` user agent since 0.2.8, and the separate `refresh_failed` state since 0.2.9) has been built but has not been flashed yet. Confirm that the Claude endpoint still returns HTTP 200 without the `claude-code/` user agent before relying on the device for Claude usage.
+- Firmware 0.2.9 was flashed and confirmed the `refresh_failed` diagnosis (Claude HTTP 400 from the token endpoint while Codex stayed `ok`), which also showed the honest user agent reaching the Codex endpoint. Firmware 0.3.0 was flashed on 2026-09-15 and a real Claude browser login through `/accounts.html` completed on the device: the pasted callback URL was accepted, the code exchange succeeded, and the device now holds its own Claude session.
 - OAuth token rotation after the current access tokens expire
 - Connection to the recovery SSID and captive-portal redirect from a second client
 - mDNS discovery, night brightness transitions, and long-running heap/network stability

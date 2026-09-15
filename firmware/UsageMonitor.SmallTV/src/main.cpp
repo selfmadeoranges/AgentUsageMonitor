@@ -8,6 +8,7 @@
 #include <TFT_eSPI.h>
 #include <Updater.h>
 #include <WiFiClientSecureBearSSL.h>
+#include <bearssl/bearssl_hash.h>
 #include <time.h>
 
 #include "RecoveryValidation.h"
@@ -24,13 +25,19 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr char FIRMWARE_VERSION[] = "0.2.9";
+constexpr char FIRMWARE_VERSION[] = "0.3.0";
 // 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
-constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.2.9";
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.0";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
 constexpr char CLAUDE_CLIENT_ID[] = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+// Desktop 앱과 같은 공개 클라이언트 설정. 이 클라이언트 ID에 허용된 리다이렉트 주소는 localhost뿐이라
+// 장치는 콜백을 직접 받지 못하고, 사용자가 브라우저 주소창의 URL을 장치 페이지에 붙여 넣는다.
+constexpr char CLAUDE_AUTHORIZE_URL[] = "https://claude.ai/oauth/authorize";
+constexpr char CLAUDE_REDIRECT_URI[] = "http://localhost:54545/callback";
+constexpr char CLAUDE_SCOPE[] = "user:profile";
+constexpr uint32_t LOGIN_TIMEOUT_MS = 600000;
 constexpr char CODEX_USAGE_URL[] = "https://chatgpt.com/backend-api/wham/usage";
 constexpr char CODEX_TOKEN_URL[] = "https://auth.openai.com/oauth/token";
 constexpr char CODEX_CLIENT_ID[] = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -80,6 +87,13 @@ uint32_t restartAt = 0;
 uint32_t nextPollAt[MAX_TOOLS] = {};
 // 마지막 토큰 갱신 요청의 HTTP 코드. 0은 요청 전, -1은 연결 실패다. 상태 페이지에서 원인을 볼 수 있게 남긴다.
 int lastRefreshStatus = 0;
+
+// 진행 중인 Claude 브라우저 로그인. 코드 교환이 끝나거나 10분이 지나면 버린다.
+String claudeLoginVerifier;
+String claudeLoginState;
+uint32_t claudeLoginStartedAt = 0;
+// 마지막 로그인 시도 결과. 계정 페이지에 한 번 보여 주고 지운다.
+String claudeLoginMessage;
 size_t displayPage = 0;
 size_t nextProvider = 0;
 bool wifiBeginSent = false;
@@ -249,6 +263,86 @@ String htmlEscape(const String& input) {
     return output;
 }
 
+String urlEncode(const String& value);
+bool exchangeClaudeCode(const String& code, int& status);
+
+String base64Url(const uint8_t* data, size_t length) {
+    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    String output;
+    output.reserve((length * 4) / 3 + 4);
+    for (size_t i = 0; i < length; i += 3) {
+        uint32_t chunk = static_cast<uint32_t>(data[i]) << 16;
+        if (i + 1 < length) chunk |= static_cast<uint32_t>(data[i + 1]) << 8;
+        if (i + 2 < length) chunk |= data[i + 2];
+        output += table[(chunk >> 18) & 63];
+        output += table[(chunk >> 12) & 63];
+        if (i + 1 < length) output += table[(chunk >> 6) & 63];
+        if (i + 2 < length) output += table[chunk & 63];
+    }
+    return output;
+}
+
+String randomUrlSafe(size_t byteCount) {
+    uint8_t buffer[64];
+    if (byteCount > sizeof(buffer)) byteCount = sizeof(buffer);
+    for (size_t i = 0; i < byteCount; i += 4) {
+        uint32_t value = ESP.random();
+        for (size_t j = 0; j < 4 && i + j < byteCount; j++) buffer[i + j] = static_cast<uint8_t>(value >> (8 * j));
+    }
+    return base64Url(buffer, byteCount);
+}
+
+String pkceChallenge(const String& verifier) {
+    br_sha256_context context;
+    uint8_t digest[32];
+    br_sha256_init(&context);
+    br_sha256_update(&context, verifier.c_str(), verifier.length());
+    br_sha256_out(&context, digest);
+    return base64Url(digest, sizeof(digest));
+}
+
+bool claudeLoginActive() {
+    return !claudeLoginState.isEmpty() && millis() - claudeLoginStartedAt < LOGIN_TIMEOUT_MS;
+}
+
+void clearClaudeLogin() {
+    claudeLoginVerifier = String();
+    claudeLoginState = String();
+    claudeLoginStartedAt = 0;
+}
+
+String claudeAuthorizeUrl() {
+    String url = CLAUDE_AUTHORIZE_URL;
+    url += F("?code=true&client_id=");
+    url += CLAUDE_CLIENT_ID;
+    url += F("&response_type=code&redirect_uri=");
+    url += urlEncode(CLAUDE_REDIRECT_URI);
+    url += F("&scope=");
+    url += urlEncode(CLAUDE_SCOPE);
+    url += F("&code_challenge=");
+    url += pkceChallenge(claudeLoginVerifier);
+    url += F("&code_challenge_method=S256&state=");
+    url += claudeLoginState;
+    return url;
+}
+
+/// 붙여 넣은 콜백 URL에서 ?key= / &key= / #key= 뒤의 값을 꺼낸다. 없으면 빈 문자열.
+String callbackParameter(const String& text, const char* key) {
+    String needle = String(key) + '=';
+    int from = 0;
+    while (true) {
+        int start = text.indexOf(needle, from);
+        if (start < 0) return String();
+        if (start == 0 || text[start - 1] == '?' || text[start - 1] == '&' || text[start - 1] == '#') {
+            start += needle.length();
+            int end = start;
+            while (end < static_cast<int>(text.length()) && text[end] != '&' && text[end] != '#' && text[end] != ' ') end++;
+            return text.substring(start, end);
+        }
+        from = start + needle.length();
+    }
+}
+
 String pageStart(const __FlashStringHelper* title) {
     String html;
     html.reserve(4200);
@@ -414,7 +508,31 @@ void handleAccountsPage() {
         "<button type=submit>등록</button></form></section>"
         "<section><h2>Claude</h2><p>");
     html += credentialsState(claudeCredentials);
-    html += F("</p><form method=post action=/save-account><input type=hidden name=provider value=claude>"
+    html += F("</p>");
+    if (!claudeLoginMessage.isEmpty()) {
+        html += F("<p><b>");
+        html += htmlEscape(claudeLoginMessage);
+        html += F("</b></p>");
+        claudeLoginMessage = String();
+    }
+    if (claudeLoginActive()) {
+        String url = claudeAuthorizeUrl();
+        html += F("<p>1. 아래 링크를 PC나 휴대폰 브라우저에서 열어 Claude에 로그인합니다.</p><p><a class=button target=_blank rel=noopener href='");
+        html += htmlEscape(url);
+        html += F("'>Claude 로그인 열기</a></p><textarea readonly rows=4 style='box-sizing:border-box;width:100%;background:#292b2f;color:#aaa'>");
+        html += htmlEscape(url);
+        html += F("</textarea>"
+            "<p>2. 로그인이 끝나면 브라우저가 localhost:54545 주소로 이동하다 \"연결할 수 없음\" 화면에서 멈춥니다. "
+            "그 주소창의 URL 전체를 복사해 아래에 붙여 넣습니다. 10분 안에 마쳐야 합니다.</p>"
+            "<form method=post action=/claude-login-finish>"
+            "<label>콜백 URL<textarea name=callback rows=3 maxlength=4096 style='box-sizing:border-box;width:100%;background:#292b2f;color:#fff' required></textarea></label>"
+            "<button type=submit>로그인 완료</button></form>"
+            "<form method=post action=/claude-login><button type=submit class=danger>다시 시작</button></form>");
+    } else {
+        html += F("<p class=muted>브라우저 로그인은 장치 전용 세션을 만들어 PC와 리프레시 토큰을 공유하지 않습니다.</p>"
+            "<form method=post action=/claude-login><button type=submit>Claude 로그인 시작</button></form>");
+    }
+    html += F("<h3>토큰 직접 입력</h3><form method=post action=/save-account><input type=hidden name=provider value=claude>"
         "<label>액세스 토큰<input type=password name=access maxlength=4096 autocomplete=off></label>"
         "<label>리프레시 토큰<input type=password name=refresh maxlength=4096 autocomplete=off></label>"
         "<label>만료 시각 (Unix 초, 알 수 없으면 0)<input type=number name=expires min=0 value=0></label>"
@@ -509,6 +627,51 @@ void handleSaveAccount() {
     nextPollAt[claude ? 0 : 1] = 0;
     webServer.sendHeader(F("Location"), F("/accounts.html"), true);
     webServer.send(303, F("text/plain; charset=utf-8"), F("저장했습니다."));
+}
+
+void handleClaudeLoginStart() {
+    if (!requireAuthentication()) return;
+    claudeLoginVerifier = randomUrlSafe(32);
+    claudeLoginState = randomUrlSafe(32);
+    claudeLoginStartedAt = millis();
+    webServer.sendHeader(F("Location"), F("/accounts.html"), true);
+    webServer.send(303, F("text/plain; charset=utf-8"), F("로그인을 시작합니다."));
+}
+
+void handleClaudeLoginFinish() {
+    if (!requireAuthentication()) return;
+    String callback = webServer.arg("callback");
+    callback.trim();
+    if (!claudeLoginActive()) {
+        claudeLoginMessage = F("로그인 시간이 지났습니다. 다시 시작하세요.");
+        clearClaudeLogin();
+    } else if (!callback.isEmpty() && callbackParameter(callback, "error").length() != 0) {
+        claudeLoginMessage = String(F("로그인이 거부되었습니다: ")) + callbackParameter(callback, "error");
+        clearClaudeLogin();
+    } else {
+        String code = callbackParameter(callback, "code");
+        String state = callbackParameter(callback, "state");
+        if (code.isEmpty()) {
+            // URL이 아니라 코드만 붙여 넣은 경우. code#state 형식도 받는다.
+            int hash = callback.indexOf('#');
+            code = hash >= 0 ? callback.substring(0, hash) : callback;
+            state = hash >= 0 ? callback.substring(hash + 1) : String();
+        }
+        if (code.isEmpty() || !isValidToken(code.c_str()) || (!state.isEmpty() && state != claudeLoginState)) {
+            claudeLoginMessage = F("콜백 URL에서 코드를 찾지 못했거나 state가 일치하지 않습니다.");
+        } else {
+            int status = 0;
+            if (exchangeClaudeCode(code, status)) {
+                claudeLoginMessage = F("Claude 로그인 완료. 사용량을 불러옵니다.");
+                clearClaudeLogin();
+            } else {
+                claudeLoginMessage = String(F("토큰 교환 실패 (HTTP ")) + String(status) + F("). 코드는 한 번만 쓸 수 있으니 다시 시작하세요.");
+                clearClaudeLogin();
+            }
+        }
+    }
+    webServer.sendHeader(F("Location"), F("/accounts.html"), true);
+    webServer.send(303, F("text/plain; charset=utf-8"), claudeLoginMessage);
 }
 
 void handleSettingsPage() {
@@ -664,6 +827,8 @@ void configureWebServer() {
     webServer.on("/accounts.html", HTTP_GET, handleAccountsPage);
     webServer.on("/save-bundle", HTTP_POST, handleSaveBundle);
     webServer.on("/save-account", HTTP_POST, handleSaveAccount);
+    webServer.on("/claude-login", HTTP_POST, handleClaudeLoginStart);
+    webServer.on("/claude-login-finish", HTTP_POST, handleClaudeLoginFinish);
     webServer.on("/settings.html", HTTP_GET, handleSettingsPage);
     webServer.on("/update", HTTP_GET, handleUpdatePage);
     webServer.on("/update", HTTP_POST, handleUpdateComplete, handleUpdateUpload);
@@ -744,6 +909,17 @@ bool readJsonResponse(HTTPClient& http, DynamicJsonDocument& document) {
     return !deserializeJson(document, body, DeserializationOption::NestingLimit(8));
 }
 
+/// 토큰 엔드포인트 응답(갱신/코드 교환 공용)을 검증해 저장한다. refresh_token이 없으면 기존 값을 유지한다.
+bool storeClaudeTokenResponse(const DynamicJsonDocument& response) {
+    const char* access = response["access_token"] | "";
+    const char* refresh = response["refresh_token"] | "";
+    if (strlen(access) == 0 || !isValidToken(access) || !isValidToken(refresh)) return false;
+    claudeCredentials.accessToken = access;
+    if (strlen(refresh) != 0) claudeCredentials.refreshToken = refresh;
+    claudeCredentials.expiresAt = unixNow() + (response["expires_in"] | 3600);
+    return saveCredentials("/claude.json", claudeCredentials);
+}
+
 bool refreshClaudeToken() {
     lastRefreshStatus = 0;
     if (claudeCredentials.refreshToken.isEmpty()) return false;
@@ -761,21 +937,45 @@ bool refreshClaudeToken() {
     int status = http.POST(payload);
     lastRefreshStatus = status;
     DynamicJsonDocument response(12288);
-    bool parsed = status == HTTP_CODE_OK && readJsonResponse(http, response);
-    if (parsed) {
-        const char* access = response["access_token"] | "";
-        const char* refresh = response["refresh_token"] | "";
-        if (strlen(access) == 0 || !isValidToken(access) || !isValidToken(refresh)) parsed = false;
-        else {
-            claudeCredentials.accessToken = access;
-            if (strlen(refresh) != 0) claudeCredentials.refreshToken = refresh;
-            claudeCredentials.expiresAt = unixNow() + (response["expires_in"] | 3600);
-            parsed = saveCredentials("/claude.json", claudeCredentials);
-        }
-    }
+    bool parsed = status == HTTP_CODE_OK && readJsonResponse(http, response) && storeClaudeTokenResponse(response);
     Serial.printf("Claude token refresh HTTP=%d ok=%d heap=%u\n", status, parsed, ESP.getFreeHeap());
     http.end();
     return parsed;
+}
+
+/// 브라우저 로그인으로 받은 인가 코드를 장치 전용 토큰으로 교환한다. 성공하면 Claude 조회를 바로 다시 시작한다.
+bool exchangeClaudeCode(const String& code, int& status) {
+    status = -1;
+    BearSSL::WiFiClientSecure client;
+    HTTPClient http;
+    if (!beginSecureRequest(client, http, CLAUDE_TOKEN_URL)) return false;
+    DynamicJsonDocument request(code.length() + claudeLoginVerifier.length() + claudeLoginState.length() + 512);
+    request["grant_type"] = "authorization_code";
+    request["client_id"] = CLAUDE_CLIENT_ID;
+    request["code"] = code;
+    request["state"] = claudeLoginState;
+    request["redirect_uri"] = CLAUDE_REDIRECT_URI;
+    request["code_verifier"] = claudeLoginVerifier;
+    String payload;
+    serializeJson(request, payload);
+    http.addHeader(F("Content-Type"), F("application/json"));
+    status = http.POST(payload);
+    DynamicJsonDocument response(12288);
+    ProviderCredentials previous = claudeCredentials;
+    bool stored = status == HTTP_CODE_OK && readJsonResponse(http, response) && storeClaudeTokenResponse(response);
+    Serial.printf("Claude code exchange HTTP=%d ok=%d heap=%u\n", status, stored, ESP.getFreeHeap());
+    http.end();
+    if (!stored) {
+        claudeCredentials = previous;
+        return false;
+    }
+    ToolData& tool = usage.tools[0];
+    tool.windowCount = 0;
+    tool.retryAt = 0;
+    tool.backoffLevel = 0;
+    snprintf(tool.state, sizeof(tool.state), "waiting");
+    nextPollAt[0] = 0;
+    return true;
 }
 
 bool refreshCodexToken() {
