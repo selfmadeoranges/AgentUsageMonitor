@@ -25,9 +25,9 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr char FIRMWARE_VERSION[] = "0.3.2";
+constexpr char FIRMWARE_VERSION[] = "0.3.3";
 // 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
-constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.2";
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.3";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -277,6 +277,7 @@ String urlEncode(const String& value);
 bool exchangeCode(size_t provider, const String& code, int& status);
 bool copyCodexTokenResponse(const DynamicJsonDocument& response, String& idToken);
 bool finishCodexCredentials(const String& idToken);
+bool parseJsonInPlace(String& body, DynamicJsonDocument& document);
 
 String base64Url(const uint8_t* data, size_t length) {
     static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -340,14 +341,14 @@ String base64UrlDecode(const String& input) {
 }
 
 /// JWT의 페이로드(두 번째 구간)를 JSON으로 읽는다. 값을 꺼내는 용도라 서명은 검증하지 않는다.
-bool readJwtPayload(const String& jwt, DynamicJsonDocument& document) {
+/// 문서는 payload 버퍼를 그대로 참조하므로(제자리 파싱) 호출자가 payload를 문서보다 오래 유지해야 한다.
+bool readJwtPayload(const String& jwt, String& payload, DynamicJsonDocument& document) {
     int first = jwt.indexOf('.');
     int second = first < 0 ? -1 : jwt.indexOf('.', first + 1);
     if (first < 0 || second < 0) return false;
-    String payload = base64UrlDecode(jwt.substring(first + 1, second));
+    payload = base64UrlDecode(jwt.substring(first + 1, second));
     if (payload.isEmpty()) return false;
-    document.clear();
-    return !deserializeJson(document, payload, DeserializationOption::NestingLimit(8));
+    return parseJsonInPlace(payload, document);
 }
 
 bool loginActive(size_t provider) {
@@ -1010,6 +1011,21 @@ bool beginSecureRequest(BearSSL::WiFiClientSecure& client, HTTPClient& http, con
     return true;
 }
 
+/// 응답 본문을 String으로 읽은 뒤 연결을 바로 닫는다. TLS 메모리를 먼저 돌려줘야 큰 토큰 응답을 파싱할 힙이 남는다.
+bool readBodyAndClose(HTTPClient& http, int status, String& body) {
+    bool ok = status == HTTP_CODE_OK && http.getSize() <= static_cast<int>(MAX_JSON_BYTES);
+    if (ok) body = http.getString();
+    http.end();
+    return ok && !body.isEmpty() && body.length() <= MAX_JSON_BYTES;
+}
+
+/// String 버퍼를 제자리에서 파싱한다. 문자열 값은 복사되지 않고 body를 가리키므로 문서는 구조 크기만 있으면 되고,
+/// body는 파싱 뒤 내용이 바뀌며 문서보다 오래 살아 있어야 한다.
+bool parseJsonInPlace(String& body, DynamicJsonDocument& document) {
+    document.clear();
+    return !deserializeJson(document, const_cast<char*>(body.c_str()), DeserializationOption::NestingLimit(8));
+}
+
 bool readJsonResponse(HTTPClient& http, DynamicJsonDocument& document) {
     int size = http.getSize();
     if (size > static_cast<int>(MAX_JSON_BYTES)) return false;
@@ -1047,12 +1063,12 @@ bool refreshClaudeToken() {
     http.addHeader(F("Content-Type"), F("application/json"));
     int status = http.POST(payload);
     lastRefreshStatus = status;
-    bool copied;
-    {
-        DynamicJsonDocument response(12288);
-        copied = status == HTTP_CODE_OK && readJsonResponse(http, response) && copyClaudeTokenResponse(response);
+    String body;
+    bool copied = false;
+    if (readBodyAndClose(http, status, body)) {
+        DynamicJsonDocument response(2048);
+        copied = parseJsonInPlace(body, response) && copyClaudeTokenResponse(response);
     }
-    http.end();
     bool parsed = copied && saveCredentials("/claude.json", claudeCredentials);
     Serial.printf("Claude token refresh HTTP=%d ok=%d heap=%u\n", status, parsed, ESP.getFreeHeap());
     return parsed;
@@ -1092,13 +1108,14 @@ bool exchangeCode(size_t provider, const String& code, int& status) {
     }
     status = http.POST(payload);
     String idToken;
-    bool stored;
-    {
-        DynamicJsonDocument response(12288);
-        stored = status == HTTP_CODE_OK && readJsonResponse(http, response)
+    String body;
+    bool stored = false;
+    if (readBodyAndClose(http, status, body)) {
+        DynamicJsonDocument response(2048);
+        stored = parseJsonInPlace(body, response)
             && (provider == 0 ? copyClaudeTokenResponse(response) : copyCodexTokenResponse(response, idToken));
     }
-    http.end();
+    body = String();
     if (stored) stored = provider == 0 ? saveCredentials("/claude.json", claudeCredentials) : finishCodexCredentials(idToken);
     Serial.printf("%s code exchange HTTP=%d ok=%d heap=%u\n", usage.tools[provider].name, status, stored, ESP.getFreeHeap());
     if (!stored) {
@@ -1129,14 +1146,15 @@ bool copyCodexTokenResponse(const DynamicJsonDocument& response, String& idToken
 
 /// 액세스 토큰(없으면 id_token)의 JWT 클레임에서 계정 ID와 만료 시각을 읽고 저장한다.
 bool finishCodexCredentials(const String& idToken) {
-    DynamicJsonDocument claims(4096);
-    if (readJwtPayload(codexCredentials.accessToken, claims)) {
+    DynamicJsonDocument claims(3072);
+    String payload;
+    if (readJwtPayload(codexCredentials.accessToken, payload, claims)) {
         int64_t exp = claims["exp"] | 0;
         if (exp > 0) codexCredentials.expiresAt = exp;
         const char* account = claims["https://api.openai.com/auth"]["chatgpt_account_id"] | "";
         if (strlen(account) != 0 && strlen(account) <= 128) codexCredentials.accountId = account;
     }
-    if (codexCredentials.accountId.isEmpty() && readJwtPayload(idToken, claims)) {
+    if (codexCredentials.accountId.isEmpty() && readJwtPayload(idToken, payload, claims)) {
         const char* account = claims["https://api.openai.com/auth"]["chatgpt_account_id"] | "";
         if (strlen(account) != 0 && strlen(account) <= 128) codexCredentials.accountId = account;
     }
@@ -1160,12 +1178,13 @@ bool refreshCodexToken() {
     int status = http.POST(payload);
     lastRefreshStatus = status;
     String idToken;
-    bool copied;
-    {
-        DynamicJsonDocument response(12288);
-        copied = status == HTTP_CODE_OK && readJsonResponse(http, response) && copyCodexTokenResponse(response, idToken);
+    String body;
+    bool copied = false;
+    if (readBodyAndClose(http, status, body)) {
+        DynamicJsonDocument response(2048);
+        copied = parseJsonInPlace(body, response) && copyCodexTokenResponse(response, idToken);
     }
-    http.end();
+    body = String();
     bool parsed = copied && finishCodexCredentials(idToken);
     Serial.printf("Codex token refresh HTTP=%d ok=%d heap=%u\n", status, parsed, ESP.getFreeHeap());
     return parsed;
