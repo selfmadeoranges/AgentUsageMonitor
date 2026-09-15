@@ -167,7 +167,7 @@ The project targets PlatformIO `esp12e`, Arduino ESP8266, a 4 MB flash with a 1 
 | Backlight, active low | 5 |
 | CS | tied to GND |
 
-The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.3.1 uses 549,983 bytes of flash and 33,620 bytes of static RAM; the generated BIN is 554,128 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
+The selected linker layout leaves a 1,044,464-byte application limit. Firmware 0.3.2 uses 550,335 bytes of flash and 33,652 bytes of static RAM; the generated BIN is 554,480 bytes. Dynamic TLS/JSON allocations still need physical-device soak testing.
 
 ## Verification and installation result
 
@@ -184,7 +184,7 @@ Verified on 2026-09-14:
 
 Still requiring longer or manual hardware validation:
 
-- Firmware 0.2.9 was flashed and confirmed the `refresh_failed` diagnosis (Claude HTTP 400 from the token endpoint while Codex stayed `ok`), which also showed the honest user agent reaching the Codex endpoint. Firmware 0.3.0 was flashed on 2026-09-15 and a real Claude browser login through `/accounts.html` completed on the device: the pasted callback URL was accepted, the code exchange succeeded, and the device now holds its own Claude session. Firmware 0.3.1 adds the same browser login for Codex and has been built but not yet flashed; the first Codex login through `/accounts.html` still needs to be confirmed on the device.
+- Firmware 0.2.9 was flashed and confirmed the `refresh_failed` diagnosis (Claude HTTP 400 from the token endpoint while Codex stayed `ok`), which also showed the honest user agent reaching the Codex endpoint. Firmware 0.3.0 was flashed on 2026-09-15 and a real Claude browser login through `/accounts.html` completed on the device: the pasted callback URL was accepted, the code exchange succeeded, and the device now holds its own Claude session. Firmware 0.3.1 added the same browser login for Codex. On the device, a Claude browser login on 0.3.1 completed and polled successfully but did not survive a power cycle: `/claude.json` had been written while the TLS session was still holding most of the heap, so the 12 KB credential document failed to allocate and the file contained only `null`. Firmware 0.3.2 saves credentials only after the HTTPS connection is closed, sizes the document to the payload, refuses to write an empty or overflowed document, and reports `hasAccessToken`, `hasRefreshToken`, and `expiresAt` per tool in `/status.json`. The same latent defect affected every earlier token refresh, so a refreshed token was never durable before 0.3.2. Persistence of a browser login across a power cycle on 0.3.2, and the first Codex browser login, still need device confirmation.
 - OAuth token rotation after the current access tokens expire
 - Connection to the recovery SSID and captive-portal redirect from a second client
 - mDNS discovery, night brightness transitions, and long-running heap/network stability

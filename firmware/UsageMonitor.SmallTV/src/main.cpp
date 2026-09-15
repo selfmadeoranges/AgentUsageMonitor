@@ -25,9 +25,9 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr char FIRMWARE_VERSION[] = "0.3.1";
+constexpr char FIRMWARE_VERSION[] = "0.3.2";
 // 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
-constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.1";
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.2";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -163,6 +163,8 @@ bool ensureFileSystemForWrite() {
 }
 
 bool writeJsonAtomically(const char* path, JsonDocument& document) {
+    // 힙이 부족해 문서 할당이나 값 저장에 실패하면 "null"만 기록되고 다음 부팅에서 내용이 사라진다. 그 전에 막는다.
+    if (document.isNull() || document.overflowed()) return false;
     if (!ensureFileSystemForWrite()) return false;
     String temporary = String(path) + F(".tmp");
     File file = LittleFS.open(temporary, "w");
@@ -245,7 +247,8 @@ bool loadCredentials(const char* path, ProviderCredentials& credentials) {
 }
 
 bool saveCredentials(const char* path, const ProviderCredentials& credentials) {
-    DynamicJsonDocument document(12288);
+    DynamicJsonDocument document(credentials.accessToken.length() + credentials.refreshToken.length()
+        + credentials.accountId.length() + 256);
     document["version"] = 1;
     document["accessToken"] = credentials.accessToken;
     document["refreshToken"] = credentials.refreshToken;
@@ -913,6 +916,10 @@ void handleStatusJson() {
         item["httpStatus"] = usage.tools[i].httpStatus;
         item["lastSuccessAt"] = usage.tools[i].lastSuccessAt;
         item["retryAt"] = usage.tools[i].retryAt;
+        const ProviderCredentials& credentials = i == 0 ? claudeCredentials : codexCredentials;
+        item["hasAccessToken"] = !credentials.accessToken.isEmpty();
+        item["hasRefreshToken"] = !credentials.refreshToken.isEmpty();
+        item["expiresAt"] = credentials.expiresAt;
     }
     String body;
     serializeJson(document, body);
@@ -1012,15 +1019,16 @@ bool readJsonResponse(HTTPClient& http, DynamicJsonDocument& document) {
     return !deserializeJson(document, body, DeserializationOption::NestingLimit(8));
 }
 
-/// 토큰 엔드포인트 응답(갱신/코드 교환 공용)을 검증해 저장한다. refresh_token이 없으면 기존 값을 유지한다.
-bool storeClaudeTokenResponse(const DynamicJsonDocument& response) {
+/// 토큰 엔드포인트 응답(갱신/코드 교환 공용)을 검증해 메모리에 옮긴다. refresh_token이 없으면 기존 값을 유지한다.
+/// 파일 저장은 TLS 메모리를 해제한 뒤 호출자가 한다. TLS가 살아 있는 동안 저장하면 힙 부족으로 빈 파일이 남을 수 있다.
+bool copyClaudeTokenResponse(const DynamicJsonDocument& response) {
     const char* access = response["access_token"] | "";
     const char* refresh = response["refresh_token"] | "";
     if (strlen(access) == 0 || !isValidToken(access) || !isValidToken(refresh)) return false;
     claudeCredentials.accessToken = access;
     if (strlen(refresh) != 0) claudeCredentials.refreshToken = refresh;
     claudeCredentials.expiresAt = unixNow() + (response["expires_in"] | 3600);
-    return saveCredentials("/claude.json", claudeCredentials);
+    return true;
 }
 
 bool refreshClaudeToken() {
@@ -1039,10 +1047,14 @@ bool refreshClaudeToken() {
     http.addHeader(F("Content-Type"), F("application/json"));
     int status = http.POST(payload);
     lastRefreshStatus = status;
-    DynamicJsonDocument response(12288);
-    bool parsed = status == HTTP_CODE_OK && readJsonResponse(http, response) && storeClaudeTokenResponse(response);
-    Serial.printf("Claude token refresh HTTP=%d ok=%d heap=%u\n", status, parsed, ESP.getFreeHeap());
+    bool copied;
+    {
+        DynamicJsonDocument response(12288);
+        copied = status == HTTP_CODE_OK && readJsonResponse(http, response) && copyClaudeTokenResponse(response);
+    }
     http.end();
+    bool parsed = copied && saveCredentials("/claude.json", claudeCredentials);
+    Serial.printf("Claude token refresh HTTP=%d ok=%d heap=%u\n", status, parsed, ESP.getFreeHeap());
     return parsed;
 }
 
@@ -1084,10 +1096,10 @@ bool exchangeCode(size_t provider, const String& code, int& status) {
     {
         DynamicJsonDocument response(12288);
         stored = status == HTTP_CODE_OK && readJsonResponse(http, response)
-            && (provider == 0 ? storeClaudeTokenResponse(response) : copyCodexTokenResponse(response, idToken));
+            && (provider == 0 ? copyClaudeTokenResponse(response) : copyCodexTokenResponse(response, idToken));
     }
     http.end();
-    if (stored && provider == 1) stored = finishCodexCredentials(idToken);
+    if (stored) stored = provider == 0 ? saveCredentials("/claude.json", claudeCredentials) : finishCodexCredentials(idToken);
     Serial.printf("%s code exchange HTTP=%d ok=%d heap=%u\n", usage.tools[provider].name, status, stored, ESP.getFreeHeap());
     if (!stored) {
         credentials = previous;
