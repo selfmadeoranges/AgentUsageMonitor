@@ -25,9 +25,9 @@
 constexpr uint8_t BACKLIGHT_PIN = 5;
 constexpr uint32_t RECONNECT_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
-constexpr char FIRMWARE_VERSION[] = "0.3.3";
+constexpr char FIRMWARE_VERSION[] = "0.3.4";
 // 모든 HTTPS 요청에 붙는 제품 식별자. 다른 클라이언트(Claude Code 등)를 사칭하지 않는다.
-constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.3";
+constexpr char USER_AGENT[] = "UsageMonitor-SmallTV/0.3.4";
 
 constexpr char CLAUDE_USAGE_URL[] = "https://api.anthropic.com/api/oauth/usage";
 constexpr char CLAUDE_TOKEN_URL[] = "https://console.anthropic.com/v1/oauth/token";
@@ -101,6 +101,8 @@ struct PendingLogin {
     String message;
 };
 PendingLogin logins[MAX_TOOLS];
+// 마지막 코드 교환이 실패한 단계. 계정 페이지 메시지에 붙여 원인을 바로 볼 수 있게 한다. 비밀 값은 담지 않는다.
+String exchangeFailure;
 size_t displayPage = 0;
 size_t nextProvider = 0;
 bool wifiBeginSent = false;
@@ -276,7 +278,7 @@ String htmlEscape(const String& input) {
 String urlEncode(const String& value);
 bool exchangeCode(size_t provider, const String& code, int& status);
 bool copyCodexTokenResponse(const DynamicJsonDocument& response, String& idToken);
-bool finishCodexCredentials(const String& idToken);
+const char* finishCodexCredentials(const String& idToken);
 bool parseJsonInPlace(String& body, DynamicJsonDocument& document);
 
 String base64Url(const uint8_t* data, size_t length) {
@@ -772,7 +774,8 @@ void handleLoginFinish() {
             if (exchangeCode(provider, code, status)) {
                 login.message = String(usage.tools[provider].name) + F(" 로그인 완료. 사용량을 불러옵니다.");
             } else {
-                login.message = String(F("토큰 교환 실패 (HTTP ")) + String(status) + F("). 코드는 한 번만 쓸 수 있으니 다시 시작하세요.");
+                login.message = String(F("토큰 교환 실패 (HTTP ")) + String(status) + F(", ") + exchangeFailure
+                    + F("). 코드는 한 번만 쓸 수 있으니 다시 시작하세요.");
             }
             clearLogin(provider);
         }
@@ -1079,11 +1082,14 @@ bool refreshClaudeToken() {
 bool exchangeCode(size_t provider, const String& code, int& status) {
     const PendingLogin& login = logins[provider];
     ProviderCredentials& credentials = provider == 0 ? claudeCredentials : codexCredentials;
-    ProviderCredentials previous = credentials;
+    exchangeFailure = String();
     status = -1;
     BearSSL::WiFiClientSecure client;
     HTTPClient http;
-    if (!beginSecureRequest(client, http, provider == 0 ? CLAUDE_TOKEN_URL : CODEX_TOKEN_URL)) return false;
+    if (!beginSecureRequest(client, http, provider == 0 ? CLAUDE_TOKEN_URL : CODEX_TOKEN_URL)) {
+        exchangeFailure = F("TLS 연결 실패");
+        return false;
+    }
     String payload;
     if (provider == 0) {
         DynamicJsonDocument request(code.length() + login.verifier.length() + login.state.length() + 512);
@@ -1107,17 +1113,43 @@ bool exchangeCode(size_t provider, const String& code, int& status) {
         http.addHeader(F("Content-Type"), F("application/x-www-form-urlencoded"));
     }
     status = http.POST(payload);
+    payload = String();
+    int contentLength = http.getSize();
+    uint32_t heapBeforeRead = ESP.getFreeHeap();
     String idToken;
     String body;
     bool stored = false;
-    if (readBodyAndClose(http, status, body)) {
-        DynamicJsonDocument response(2048);
-        stored = parseJsonInPlace(body, response)
-            && (provider == 0 ? copyClaudeTokenResponse(response) : copyCodexTokenResponse(response, idToken));
+    if (!readBodyAndClose(http, status, body)) {
+        exchangeFailure = status == HTTP_CODE_OK ? F("응답 본문 읽기 실패") : F("HTTP 오류");
     }
+    // 기존 자격 증명 복사본은 TLS를 닫은 뒤에 만든다. 연결 중에는 힙을 한 바이트도 아껴야 한다.
+    ProviderCredentials previous = credentials;
+    if (exchangeFailure.isEmpty()) {
+        DynamicJsonDocument response(2048);
+        if (!parseJsonInPlace(body, response)) exchangeFailure = F("응답 JSON 파싱 실패");
+        else if (!(provider == 0 ? copyClaudeTokenResponse(response) : copyCodexTokenResponse(response, idToken))) exchangeFailure = F("응답에 유효한 토큰 없음");
+    }
+    size_t bodyLength = body.length();
     body = String();
-    if (stored) stored = provider == 0 ? saveCredentials("/claude.json", claudeCredentials) : finishCodexCredentials(idToken);
-    Serial.printf("%s code exchange HTTP=%d ok=%d heap=%u\n", usage.tools[provider].name, status, stored, ESP.getFreeHeap());
+    if (exchangeFailure.isEmpty()) {
+        if (provider == 0) {
+            if (!saveCredentials("/claude.json", claudeCredentials)) exchangeFailure = F("파일 저장 실패");
+        } else {
+            const char* failure = finishCodexCredentials(idToken);
+            if (failure != nullptr) exchangeFailure = failure;
+        }
+    }
+    stored = exchangeFailure.isEmpty();
+    if (!stored) {
+        exchangeFailure += F(", 본문 ");
+        exchangeFailure += String(bodyLength);
+        exchangeFailure += F("/");
+        exchangeFailure += String(contentLength);
+        exchangeFailure += F("바이트, 읽기 전 힙 ");
+        exchangeFailure += String(heapBeforeRead);
+    }
+    Serial.printf("%s code exchange HTTP=%d ok=%d length=%d heap=%u %s\n", usage.tools[provider].name, status, stored,
+        contentLength, ESP.getFreeHeap(), exchangeFailure.c_str());
     if (!stored) {
         credentials = previous;
         return false;
@@ -1145,10 +1177,12 @@ bool copyCodexTokenResponse(const DynamicJsonDocument& response, String& idToken
 }
 
 /// 액세스 토큰(없으면 id_token)의 JWT 클레임에서 계정 ID와 만료 시각을 읽고 저장한다.
-bool finishCodexCredentials(const String& idToken) {
+/// 성공하면 nullptr, 실패하면 원인 문구를 돌려준다.
+const char* finishCodexCredentials(const String& idToken) {
     DynamicJsonDocument claims(3072);
     String payload;
-    if (readJwtPayload(codexCredentials.accessToken, payload, claims)) {
+    bool accessParsed = readJwtPayload(codexCredentials.accessToken, payload, claims);
+    if (accessParsed) {
         int64_t exp = claims["exp"] | 0;
         if (exp > 0) codexCredentials.expiresAt = exp;
         const char* account = claims["https://api.openai.com/auth"]["chatgpt_account_id"] | "";
@@ -1158,8 +1192,9 @@ bool finishCodexCredentials(const String& idToken) {
         const char* account = claims["https://api.openai.com/auth"]["chatgpt_account_id"] | "";
         if (strlen(account) != 0 && strlen(account) <= 128) codexCredentials.accountId = account;
     }
-    if (codexCredentials.accountId.isEmpty()) return false;
-    return saveCredentials("/codex.json", codexCredentials);
+    if (codexCredentials.accountId.isEmpty()) return accessParsed ? "계정 ID 클레임 없음" : "액세스 토큰 JWT 파싱 실패";
+    if (!saveCredentials("/codex.json", codexCredentials)) return "파일 저장 실패";
+    return nullptr;
 }
 
 bool refreshCodexToken() {
@@ -1185,7 +1220,7 @@ bool refreshCodexToken() {
         copied = parseJsonInPlace(body, response) && copyCodexTokenResponse(response, idToken);
     }
     body = String();
-    bool parsed = copied && finishCodexCredentials(idToken);
+    bool parsed = copied && finishCodexCredentials(idToken) == nullptr;
     Serial.printf("Codex token refresh HTTP=%d ok=%d heap=%u\n", status, parsed, ESP.getFreeHeap());
     return parsed;
 }
