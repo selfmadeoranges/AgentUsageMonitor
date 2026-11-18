@@ -9,15 +9,19 @@
         ShowInTaskbar="False"
         ShowActivated="False"
         ResizeMode="NoResize"
-        SizeToContent="WidthAndHeight"
-        WindowStartupLocation="Manual">
+        WindowStartupLocation="Manual"
+        Left="0"
+        Top="0"
+        Width="800"
+        Height="44">
+    <!-- 위치와 크기는 AppBar 등록 후 셸이 정해 준 영역으로 코드에서 맞춘다. -->
     <Border x:Name="RootBorder"
-            CornerRadius="10"
             Background="#F0202020"
             BorderBrush="#40FFFFFF"
-            BorderThickness="1"
-            Padding="10,8"
-            MouseLeftButtonDown="RootBorder_MouseLeftButtonDown">
-        <StackPanel x:Name="CardPanel" Orientation="Horizontal"/>
+            BorderThickness="0,0,0,1">
+        <StackPanel x:Name="CardPanel"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"/>
     </Border>
 </Window>

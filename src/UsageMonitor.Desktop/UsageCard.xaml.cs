@@ -39,6 +39,12 @@ public partial class UsageCard : UserControl
         }
     }
 
+    /// <summary>앞에 다른 도구가 보일 때 왼쪽 구분선을 켠다.</summary>
+    public void SetDividerVisible(bool visible)
+    {
+        Divider.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     public void Apply(UsageSnapshot snapshot)
     {
         bool hasError = snapshot.Error != null;
@@ -72,12 +78,13 @@ public partial class UsageCard : UserControl
         else
         {
             ErrorText.Visibility = Visibility.Collapsed;
-            UpdatedText.Text = snapshot.FetchedAt.ToString("HH:mm:ss");
+            // 한 줄 바를 덜 복잡하게 하려고 갱신 시각은 마우스를 올렸을 때만 보여준다.
+            Root.ToolTip = "마지막 갱신 " + snapshot.FetchedAt.ToString("HH:mm:ss");
         }
 
         if (greyOut)
         {
-            UpdatedText.Text = "";
+            Root.ToolTip = null;
             Root.Opacity = 0.55;
         }
         else

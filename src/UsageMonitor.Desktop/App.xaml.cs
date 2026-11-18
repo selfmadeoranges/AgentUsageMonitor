@@ -61,8 +61,7 @@ public partial class App : Application
         _window = new MainWindow(names);
         _window.Opacity = _settings.Opacity;
         _window.ClickThrough = _settings.ClickThrough;
-        _window.ApplyPosition(_settings.WindowLeft, _settings.WindowTop);
-        _window.PositionChanged += OnWindowPositionChanged;
+        _window.BarAtBottom = _settings.BarAtBottom;
         foreach (string name in names)
         {
             _window.SetToolVisible(name, IsToolVisible(name));
@@ -84,13 +83,13 @@ public partial class App : Application
         _tray.CodexLoginRequested += () => _ = CodexLoginAsync();
         _tray.CodexLogoutRequested += CodexLogout;
         _tray.WidgetVisibleChanged += OnWidgetVisibleChanged;
+        _tray.BarAtBottomChanged += OnBarAtBottomChanged;
         _tray.ToolVisibleChanged += OnToolVisibleChanged;
         _tray.ClickThroughChanged += OnClickThroughChanged;
         _tray.OpacityChanged += OnOpacityChanged;
         _tray.RefreshSecondsChanged += OnRefreshSecondsChanged;
         _tray.AlertEnabledChanged += OnAlertEnabledChanged;
         _tray.AutoStartChanged += OnAutoStartChanged;
-        _tray.ResetPositionRequested += () => _window?.ResetPosition();
         _tray.ExitRequested += Shutdown;
 
         // 실행 파일 경로가 바뀌었을 수 있으므로 시작 시 레지스트리를 설정과 맞춘다.
@@ -436,13 +435,6 @@ public partial class App : Application
         }
     }
 
-    private void OnWindowPositionChanged(double left, double top)
-    {
-        _settings.WindowLeft = left;
-        _settings.WindowTop = top;
-        _settings.Save();
-    }
-
     private void OnWidgetVisibleChanged(bool visible)
     {
         _settings.WidgetVisible = visible;
@@ -454,6 +446,16 @@ public partial class App : Application
         else
         {
             _window?.Hide();
+        }
+    }
+
+    private void OnBarAtBottomChanged(bool atBottom)
+    {
+        _settings.BarAtBottom = atBottom;
+        _settings.Save();
+        if (_window != null)
+        {
+            _window.BarAtBottom = atBottom;
         }
     }
 

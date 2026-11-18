@@ -1,40 +1,52 @@
 <UserControl x:Class="UsageMonitor.UsageCard"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel x:Name="Root" Width="180" Margin="6,0">
-        <DockPanel Margin="0,0,0,4">
-            <TextBlock x:Name="UpdatedText" DockPanel.Dock="Right" FontSize="10" Foreground="#80FFFFFF" VerticalAlignment="Center"/>
-            <Image x:Name="IconImage" DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,6,0"
+    <!-- 바 안에서 도구 하나를 가로로 표시한다: 구분선, 아이콘과 제목, 한도 창 미니 카드들, 오류 -->
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <!-- 앞에 보이는 도구가 있을 때만 MainWindow가 켠다. 회색 처리(Root.Opacity)에 영향받지 않도록 Root 밖에 둔다. -->
+        <Border x:Name="Divider" Width="1" Height="28" Background="#40FFFFFF" Margin="6,0,10,0"
+                VerticalAlignment="Center" Visibility="Collapsed"/>
+
+        <StackPanel x:Name="Root" Orientation="Horizontal" Margin="10,0" VerticalAlignment="Center">
+            <Image x:Name="IconImage" Width="16" Height="16" Margin="0,0,6,0"
                    VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" Visibility="Collapsed"/>
-            <TextBlock x:Name="TitleText" FontSize="13" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
-        </DockPanel>
+            <TextBlock x:Name="TitleText" FontSize="13" FontWeight="SemiBold" Foreground="White"
+                       VerticalAlignment="Center" Margin="0,0,14,0"/>
 
-        <ItemsControl x:Name="Rows">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Margin="0,2,0,4">
-                        <DockPanel>
-                            <TextBlock DockPanel.Dock="Right" Text="{Binding PercentText}" FontSize="11" Foreground="White" FontWeight="SemiBold"/>
-                            <TextBlock Text="{Binding Label}" FontSize="11" Foreground="#D0FFFFFF"/>
-                        </DockPanel>
-                        <ProgressBar Height="6" Margin="0,2,0,1" Minimum="0" Maximum="100"
-                                     Value="{Binding Percent, Mode=OneWay}"
-                                     Foreground="{Binding BarBrush}" Background="#30FFFFFF" BorderThickness="0">
-                            <ProgressBar.Template>
-                                <ControlTemplate TargetType="ProgressBar">
-                                    <Grid>
-                                        <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3"/>
-                                        <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3"/>
-                                    </Grid>
-                                </ControlTemplate>
-                            </ProgressBar.Template>
-                        </ProgressBar>
-                        <TextBlock Text="{Binding ResetText}" FontSize="9.5" Foreground="#80FFFFFF"/>
-                    </StackPanel>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+            <ItemsControl x:Name="Rows" VerticalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <!-- 예전 카드와 같은 구조: 이름과 퍼센트, 막대, 리셋까지 남은 시간 -->
+                        <StackPanel Width="120" Margin="0,0,14,0" VerticalAlignment="Center">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding PercentText}" FontSize="12" Foreground="White" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding Label}" FontSize="12" Foreground="#D0FFFFFF" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                            <ProgressBar Height="5" Margin="0,3,0,3" Minimum="0" Maximum="100"
+                                         Value="{Binding Percent, Mode=OneWay}"
+                                         Foreground="{Binding BarBrush}" Background="#30FFFFFF" BorderThickness="0">
+                                <ProgressBar.Template>
+                                    <ControlTemplate TargetType="ProgressBar">
+                                        <Grid>
+                                            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="2.5"/>
+                                            <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="2.5"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ProgressBar.Template>
+                            </ProgressBar>
+                            <TextBlock Text="{Binding ResetText}" FontSize="10" Foreground="#80FFFFFF"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
-        <TextBlock x:Name="ErrorText" FontSize="10" Foreground="#FFCCCCCC" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,2,0,0"/>
+            <TextBlock x:Name="ErrorText" FontSize="11" Foreground="#FFCCCCCC" VerticalAlignment="Center"
+                       MaxWidth="240" TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
+        </StackPanel>
     </StackPanel>
 </UserControl>

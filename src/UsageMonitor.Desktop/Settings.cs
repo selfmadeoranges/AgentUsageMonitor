@@ -10,17 +10,17 @@ public sealed class Settings
     // Claude 사용량 엔드포인트는 계정 단위 요청 제한이 빡빡해 기본 주기를 더 길게 둔다.
     public int ClaudeRefreshSeconds { get; set; } = 120;
     public int CodexRefreshSeconds { get; set; } = 60;
-    public double Opacity { get; set; } = 0.7;
+    public double Opacity { get; set; } = 1.0;
     public bool ClickThrough { get; set; } = false;
     public bool AlertEnabled { get; set; } = true;
     public int AlertThreshold { get; set; } = 95;
     public bool AutoStart { get; set; } = false;
     public bool WidgetVisible { get; set; } = true;
+    // 바 위치. false면 주 모니터 맨 위, true면 작업표시줄 바로 위.
+    public bool BarAtBottom { get; set; } = false;
     // 도구별 표시 여부. 꺼진 도구는 카드를 숨기고 사용량 조회도 하지 않는다.
     public bool ShowClaude { get; set; } = true;
     public bool ShowCodex { get; set; } = true;
-    public double? WindowLeft { get; set; }
-    public double? WindowTop { get; set; }
 
     public static string FilePath
     {

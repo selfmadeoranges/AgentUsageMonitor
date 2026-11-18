@@ -17,6 +17,9 @@ public sealed class TrayIcon : IDisposable
 
     private readonly NotifyIcon _notify;
     private readonly ToolStripMenuItem _showItem = new("위젯 표시") { CheckOnClick = true };
+    private readonly ToolStripMenuItem _positionMenu = new("바 위치");
+    private readonly ToolStripMenuItem _positionTopItem = new("화면 맨 위");
+    private readonly ToolStripMenuItem _positionBottomItem = new("작업표시줄 바로 위");
     private readonly ToolStripMenuItem _claudeShowItem = new("Claude 표시") { CheckOnClick = true };
     private readonly ToolStripMenuItem _codexShowItem = new("Codex 표시") { CheckOnClick = true };
     private readonly ToolStripMenuItem _clickThroughItem = new("클릭 통과") { CheckOnClick = true };
@@ -37,6 +40,8 @@ public sealed class TrayIcon : IDisposable
     public event Action? CodexLoginRequested;
     public event Action? CodexLogoutRequested;
     public event Action<bool>? WidgetVisibleChanged;
+    /// <summary>true면 작업표시줄 바로 위, false면 화면 맨 위.</summary>
+    public event Action<bool>? BarAtBottomChanged;
     /// <summary>(도구 이름, 표시 여부)</summary>
     public event Action<string, bool>? ToolVisibleChanged;
     public event Action<bool>? ClickThroughChanged;
@@ -45,7 +50,6 @@ public sealed class TrayIcon : IDisposable
     public event Action<string, int>? RefreshSecondsChanged;
     public event Action<bool>? AlertEnabledChanged;
     public event Action<bool>? AutoStartChanged;
-    public event Action? ResetPositionRequested;
     public event Action? ExitRequested;
 
     public TrayIcon(Settings settings)
@@ -56,6 +60,10 @@ public sealed class TrayIcon : IDisposable
         refreshNow.Click += (_, _) => RefreshRequested?.Invoke();
 
         _showItem.Click += (_, _) => WidgetVisibleChanged?.Invoke(_showItem.Checked);
+        _positionTopItem.Click += (_, _) => OnPositionClicked(false);
+        _positionBottomItem.Click += (_, _) => OnPositionClicked(true);
+        _positionMenu.DropDownItems.Add(_positionTopItem);
+        _positionMenu.DropDownItems.Add(_positionBottomItem);
         _claudeShowItem.Click += (_, _) => OnToolShowClicked(_claudeShowItem, _codexShowItem, "Claude");
         _codexShowItem.Click += (_, _) => OnToolShowClicked(_codexShowItem, _claudeShowItem, "Codex");
         _clickThroughItem.Click += (_, _) => ClickThroughChanged?.Invoke(_clickThroughItem.Checked);
@@ -76,9 +84,6 @@ public sealed class TrayIcon : IDisposable
         FillRefreshMenu(_claudeRefreshMenu, "Claude");
         FillRefreshMenu(_codexRefreshMenu, "Codex");
 
-        var resetPosition = new ToolStripMenuItem("위치 초기화");
-        resetPosition.Click += (_, _) => ResetPositionRequested?.Invoke();
-
         _claudeLoginItem.Click += (_, _) => ClaudeLoginRequested?.Invoke();
         _claudeLogoutItem.Click += (_, _) => ClaudeLogoutRequested?.Invoke();
         _codexLoginItem.Click += (_, _) => CodexLoginRequested?.Invoke();
@@ -95,6 +100,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(_codexLogoutItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_showItem);
+        menu.Items.Add(_positionMenu);
         menu.Items.Add(_claudeShowItem);
         menu.Items.Add(_codexShowItem);
         menu.Items.Add(_clickThroughItem);
@@ -103,7 +109,6 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(_codexRefreshMenu);
         menu.Items.Add(_alertItem);
         menu.Items.Add(_autoStartItem);
-        menu.Items.Add(resetPosition);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exit);
 
@@ -151,6 +156,8 @@ public sealed class TrayIcon : IDisposable
     public void SyncFromSettings(Settings settings)
     {
         _showItem.Checked = settings.WidgetVisible;
+        _positionTopItem.Checked = !settings.BarAtBottom;
+        _positionBottomItem.Checked = settings.BarAtBottom;
         _claudeShowItem.Checked = settings.ShowClaude;
         _codexShowItem.Checked = settings.ShowCodex;
         _clickThroughItem.Checked = settings.ClickThrough;
@@ -159,6 +166,13 @@ public sealed class TrayIcon : IDisposable
         CheckByTag(_opacityMenu, (int)Math.Round(settings.Opacity * 100));
         CheckByTag(_claudeRefreshMenu, settings.ClaudeRefreshSeconds);
         CheckByTag(_codexRefreshMenu, settings.CodexRefreshSeconds);
+    }
+
+    private void OnPositionClicked(bool atBottom)
+    {
+        _positionTopItem.Checked = !atBottom;
+        _positionBottomItem.Checked = atBottom;
+        BarAtBottomChanged?.Invoke(atBottom);
     }
 
     /// <summary>마지막으로 남은 도구는 끌 수 없다. 체크를 되돌리고 알리지 않는다.</summary>
