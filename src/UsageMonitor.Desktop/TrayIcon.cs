@@ -17,6 +17,10 @@ public sealed class TrayIcon : IDisposable
 
     private readonly NotifyIcon _notify;
     private readonly ToolStripMenuItem _showItem = new("위젯 표시") { CheckOnClick = true };
+    private readonly ToolStripMenuItem _displayModeMenu = new("표시 방식");
+    private readonly ToolStripMenuItem _modeBarItem = new("고정 바 (화면 가장자리)");
+    private readonly ToolStripMenuItem _modeCardsItem = new("플로팅 카드 (자유 배치)");
+    private readonly ToolStripMenuItem _resetPositionItem = new("카드 위치 초기화");
     private readonly ToolStripMenuItem _positionMenu = new("바 위치");
     private readonly ToolStripMenuItem _positionTopItem = new("화면 맨 위");
     private readonly ToolStripMenuItem _positionBottomItem = new("작업표시줄 바로 위");
@@ -42,6 +46,9 @@ public sealed class TrayIcon : IDisposable
     public event Action<bool>? WidgetVisibleChanged;
     /// <summary>true면 작업표시줄 바로 위, false면 화면 맨 위.</summary>
     public event Action<bool>? BarAtBottomChanged;
+    /// <summary>true면 플로팅 카드, false면 고정 바.</summary>
+    public event Action<bool>? FloatingCardsChanged;
+    public event Action? ResetPositionRequested;
     /// <summary>(도구 이름, 표시 여부)</summary>
     public event Action<string, bool>? ToolVisibleChanged;
     public event Action<bool>? ClickThroughChanged;
@@ -60,6 +67,11 @@ public sealed class TrayIcon : IDisposable
         refreshNow.Click += (_, _) => RefreshRequested?.Invoke();
 
         _showItem.Click += (_, _) => WidgetVisibleChanged?.Invoke(_showItem.Checked);
+        _modeBarItem.Click += (_, _) => OnDisplayModeClicked(false);
+        _modeCardsItem.Click += (_, _) => OnDisplayModeClicked(true);
+        _displayModeMenu.DropDownItems.Add(_modeBarItem);
+        _displayModeMenu.DropDownItems.Add(_modeCardsItem);
+        _resetPositionItem.Click += (_, _) => ResetPositionRequested?.Invoke();
         _positionTopItem.Click += (_, _) => OnPositionClicked(false);
         _positionBottomItem.Click += (_, _) => OnPositionClicked(true);
         _positionMenu.DropDownItems.Add(_positionTopItem);
@@ -100,7 +112,9 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(_codexLogoutItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_showItem);
+        menu.Items.Add(_displayModeMenu);
         menu.Items.Add(_positionMenu);
+        menu.Items.Add(_resetPositionItem);
         menu.Items.Add(_claudeShowItem);
         menu.Items.Add(_codexShowItem);
         menu.Items.Add(_clickThroughItem);
@@ -156,6 +170,9 @@ public sealed class TrayIcon : IDisposable
     public void SyncFromSettings(Settings settings)
     {
         _showItem.Checked = settings.WidgetVisible;
+        _modeBarItem.Checked = !settings.FloatingCards;
+        _modeCardsItem.Checked = settings.FloatingCards;
+        UpdateModeItems(settings.FloatingCards);
         _positionTopItem.Checked = !settings.BarAtBottom;
         _positionBottomItem.Checked = settings.BarAtBottom;
         _claudeShowItem.Checked = settings.ShowClaude;
@@ -166,6 +183,21 @@ public sealed class TrayIcon : IDisposable
         CheckByTag(_opacityMenu, (int)Math.Round(settings.Opacity * 100));
         CheckByTag(_claudeRefreshMenu, settings.ClaudeRefreshSeconds);
         CheckByTag(_codexRefreshMenu, settings.CodexRefreshSeconds);
+    }
+
+    private void OnDisplayModeClicked(bool floatingCards)
+    {
+        _modeBarItem.Checked = !floatingCards;
+        _modeCardsItem.Checked = floatingCards;
+        UpdateModeItems(floatingCards);
+        FloatingCardsChanged?.Invoke(floatingCards);
+    }
+
+    /// <summary>바 위치는 고정 바에서만, 카드 위치 초기화는 플로팅 카드에서만 쓸 수 있다.</summary>
+    private void UpdateModeItems(bool floatingCards)
+    {
+        _positionMenu.Enabled = !floatingCards;
+        _resetPositionItem.Enabled = floatingCards;
     }
 
     private void OnPositionClicked(bool atBottom)

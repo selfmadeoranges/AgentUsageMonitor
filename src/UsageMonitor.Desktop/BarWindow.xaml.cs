@@ -7,10 +7,10 @@ using UsageMonitor.Models;
 namespace UsageMonitor;
 
 /// <summary>
-/// 주 모니터 맨 위 또는 작업표시줄 바로 위에 붙는 한 줄 바(AppBar). 셸에 화면 영역을 예약하므로
+/// 고정 바: 주 모니터 맨 위 또는 작업표시줄 바로 위에 붙는 한 줄 바(AppBar). 셸에 화면 영역을 예약하므로
 /// 다른 창을 최대화하면 이 바를 피해서만 커진다. 작업표시줄과 Alt-Tab에는 나타나지 않는다.
 /// </summary>
-public partial class MainWindow : Window
+public partial class BarWindow : Window, IUsageWindow
 {
     private const int GwlExStyle = -20;
     private const int WsExTransparent = 0x00000020;
@@ -84,7 +84,7 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
-    private readonly Dictionary<string, UsageCard> _cards = new();
+    private readonly Dictionary<string, UsageBarItem> _cards = new();
     private bool _clickThrough;
     private bool _atBottom;
     private IntPtr _hwnd;
@@ -92,13 +92,13 @@ public partial class MainWindow : Window
     private bool _appBarRegistered;
     private bool _fullScreenAppOpen;
 
-    public MainWindow(IEnumerable<string> toolNames)
+    public BarWindow(IEnumerable<string> toolNames)
     {
         InitializeComponent();
 
         foreach (string name in toolNames)
         {
-            var card = new UsageCard();
+            var card = new UsageBarItem();
             card.SetTitle(name);
             _cards[name] = card;
             CardPanel.Children.Add(card);
@@ -156,7 +156,7 @@ public partial class MainWindow : Window
     /// <summary>도구 표시를 켜거나 끈다. 바 안의 내용은 가운데 정렬을 유지한다.</summary>
     public void SetToolVisible(string tool, bool visible)
     {
-        if (_cards.TryGetValue(tool, out UsageCard? card))
+        if (_cards.TryGetValue(tool, out UsageBarItem? card))
         {
             card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -167,7 +167,7 @@ public partial class MainWindow : Window
     private void UpdateDividers()
     {
         bool hasVisibleBefore = false;
-        foreach (UsageCard card in CardPanel.Children)
+        foreach (UsageBarItem card in CardPanel.Children)
         {
             bool visible = card.Visibility == Visibility.Visible;
             card.SetDividerVisible(visible && hasVisibleBefore);
@@ -182,7 +182,7 @@ public partial class MainWindow : Window
     {
         foreach (UsageSnapshot snapshot in snapshots)
         {
-            if (_cards.TryGetValue(snapshot.Tool, out UsageCard? card))
+            if (_cards.TryGetValue(snapshot.Tool, out UsageBarItem? card))
             {
                 card.Apply(snapshot);
             }

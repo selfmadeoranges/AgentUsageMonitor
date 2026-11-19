@@ -1,0 +1,27 @@
+<Window x:Class="UsageMonitor.BarWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Usage Monitor"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        Left="0"
+        Top="0"
+        Width="800"
+        Height="44">
+    <!-- 위치와 크기는 AppBar 등록 후 셸이 정해 준 영역으로 코드에서 맞춘다. -->
+    <Border x:Name="RootBorder"
+            Background="#F0202020"
+            BorderBrush="#40FFFFFF"
+            BorderThickness="0,0,0,1">
+        <StackPanel x:Name="CardPanel"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"/>
+    </Border>
+</Window>

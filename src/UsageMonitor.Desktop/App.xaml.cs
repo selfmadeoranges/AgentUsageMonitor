@@ -32,19 +32,30 @@ public partial class App : Application
     private readonly Dictionary<string, int> _backoffLevel = new();
 
     private Settings _settings = new();
-    private MainWindow? _window;
+    // 표시 방식에 따라 고정 바(BarWindow) 또는 플로팅 카드(CardWindow).
+    private IUsageWindow? _window;
     private TrayIcon? _tray;
     private DispatcherTimer? _timer;
     private bool _refreshing;
+
+    // 강제 종료는 아무 기록도 남기지 않으므로, 주기적으로 살아 있음을 남겨 사라진 시각의 범위를 좁힌다.
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(30);
+    private DispatcherTimer? _heartbeatTimer;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         _singleInstance = new Mutex(true, "UsageMonitor.SingleInstance", out bool createdNew);
         if (!createdNew)
         {
+            AppLog.Write("이미 실행 중인 인스턴스가 있어 바로 종료");
             Shutdown();
             return;
         }
+
+        AppLog.Write($"시작 (버전 {typeof(App).Assembly.GetName().Version}, {Environment.ProcessPath})");
+        // WPF는 세션 종료 요청(로그오프, 시스템 종료, 설치 프로그램의 Restart Manager)을 받으면 오류 없이 스스로 종료한다.
+        SessionEnding += (_, args) => AppLog.Write($"Windows 세션 종료 요청을 받아 종료 (사유 {args.ReasonSessionEnding})");
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => AppLog.Write("처리되지 않은 예외: " + args.ExceptionObject);
 
         base.OnStartup(e);
         System.Windows.Forms.Application.EnableVisualStyles();
@@ -52,27 +63,7 @@ public partial class App : Application
 
         _settings = Settings.Load();
 
-        var names = new List<string>();
-        foreach (IUsageProvider provider in _providers)
-        {
-            names.Add(provider.Name);
-        }
-
-        _window = new MainWindow(names);
-        _window.Opacity = _settings.Opacity;
-        _window.ClickThrough = _settings.ClickThrough;
-        _window.BarAtBottom = _settings.BarAtBottom;
-        foreach (string name in names)
-        {
-            _window.SetToolVisible(name, IsToolVisible(name));
-        }
-
-        // 창 핸들이 있어야 클릭 통과 스타일을 적용할 수 있으므로 일단 표시한 뒤 숨긴다.
-        _window.Show();
-        if (!_settings.WidgetVisible)
-        {
-            _window.Hide();
-        }
+        CreateWindow();
 
         _tray = new TrayIcon(_settings);
         _tray.SetClaudeLoggedIn(CredentialStore.LoadClaudeTokens() != null);
@@ -83,14 +74,16 @@ public partial class App : Application
         _tray.CodexLoginRequested += () => _ = CodexLoginAsync();
         _tray.CodexLogoutRequested += CodexLogout;
         _tray.WidgetVisibleChanged += OnWidgetVisibleChanged;
+        _tray.FloatingCardsChanged += OnFloatingCardsChanged;
         _tray.BarAtBottomChanged += OnBarAtBottomChanged;
+        _tray.ResetPositionRequested += OnResetPositionRequested;
         _tray.ToolVisibleChanged += OnToolVisibleChanged;
         _tray.ClickThroughChanged += OnClickThroughChanged;
         _tray.OpacityChanged += OnOpacityChanged;
         _tray.RefreshSecondsChanged += OnRefreshSecondsChanged;
         _tray.AlertEnabledChanged += OnAlertEnabledChanged;
         _tray.AutoStartChanged += OnAutoStartChanged;
-        _tray.ExitRequested += Shutdown;
+        _tray.ExitRequested += OnExitRequested;
 
         // 실행 파일 경로가 바뀌었을 수 있으므로 시작 시 레지스트리를 설정과 맞춘다.
         TryApplyAutoStart(_settings.AutoStart);
@@ -99,12 +92,61 @@ public partial class App : Application
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
 
+        _heartbeatTimer = new DispatcherTimer { Interval = HeartbeatInterval };
+        _heartbeatTimer.Tick += (_, _) => AppLog.Write("실행 중");
+        _heartbeatTimer.Start();
+
         _ = FirstRunAsync();
+    }
+
+    /// <summary>설정의 표시 방식에 맞는 창을 만들어 표시하고, 이미 받은 사용량으로 바로 채운다.</summary>
+    private void CreateWindow()
+    {
+        var names = new List<string>();
+        foreach (IUsageProvider provider in _providers)
+        {
+            names.Add(provider.Name);
+        }
+
+        IUsageWindow window;
+        if (_settings.FloatingCards)
+        {
+            var cardWindow = new CardWindow(names);
+            cardWindow.ApplyPosition(_settings.WindowLeft, _settings.WindowTop);
+            cardWindow.PositionChanged += OnWindowPositionChanged;
+            window = cardWindow;
+        }
+        else
+        {
+            var barWindow = new BarWindow(names);
+            barWindow.BarAtBottom = _settings.BarAtBottom;
+            window = barWindow;
+        }
+
+        window.Opacity = _settings.Opacity;
+        window.ClickThrough = _settings.ClickThrough;
+        foreach (string name in names)
+        {
+            window.SetToolVisible(name, IsToolVisible(name));
+        }
+
+        // 창 핸들이 있어야 클릭 통과 스타일을 적용할 수 있으므로 일단 표시한 뒤 숨긴다.
+        window.Show();
+        if (!_settings.WidgetVisible)
+        {
+            window.Hide();
+        }
+
+        // 표시 방식을 바꿨을 때 다음 조회를 기다리지 않도록 마지막 값을 바로 채운다.
+        window.Apply(LatestInOrder());
+        _window = window;
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        AppLog.Write($"종료 (종료 코드 {e.ApplicationExitCode})");
         _timer?.Stop();
+        _heartbeatTimer?.Stop();
         _tray?.Dispose();
         _http.Dispose();
         _singleInstance?.Dispose();
@@ -435,6 +477,12 @@ public partial class App : Application
         }
     }
 
+    private void OnExitRequested()
+    {
+        AppLog.Write("트레이 메뉴에서 종료 선택");
+        Shutdown();
+    }
+
     private void OnWidgetVisibleChanged(bool visible)
     {
         _settings.WidgetVisible = visible;
@@ -449,14 +497,46 @@ public partial class App : Application
         }
     }
 
+    private void OnFloatingCardsChanged(bool floatingCards)
+    {
+        if (_settings.FloatingCards == floatingCards)
+        {
+            return;
+        }
+
+        _settings.FloatingCards = floatingCards;
+        _settings.Save();
+
+        // 고정 바를 먼저 닫아 예약 영역을 돌려줘야 플로팅 카드의 기본 위치가 원래 작업 영역 기준으로 잡힌다.
+        IUsageWindow? old = _window;
+        _window = null;
+        old?.Close();
+        CreateWindow();
+    }
+
     private void OnBarAtBottomChanged(bool atBottom)
     {
         _settings.BarAtBottom = atBottom;
         _settings.Save();
-        if (_window != null)
+        if (_window is BarWindow barWindow)
         {
-            _window.BarAtBottom = atBottom;
+            barWindow.BarAtBottom = atBottom;
         }
+    }
+
+    private void OnResetPositionRequested()
+    {
+        if (_window is CardWindow cardWindow)
+        {
+            cardWindow.ResetPosition();
+        }
+    }
+
+    private void OnWindowPositionChanged(double left, double top)
+    {
+        _settings.WindowLeft = left;
+        _settings.WindowTop = top;
+        _settings.Save();
     }
 
     private void OnToolVisibleChanged(string tool, bool visible)

@@ -16,11 +16,16 @@ public sealed class Settings
     public int AlertThreshold { get; set; } = 95;
     public bool AutoStart { get; set; } = false;
     public bool WidgetVisible { get; set; } = true;
-    // 바 위치. false면 주 모니터 맨 위, true면 작업표시줄 바로 위.
+    // 표시 방식. false면 화면 가장자리에 붙는 고정 바, true면 자유롭게 옮기는 플로팅 카드.
+    public bool FloatingCards { get; set; } = false;
+    // 고정 바 위치. false면 주 모니터 맨 위, true면 작업표시줄 바로 위.
     public bool BarAtBottom { get; set; } = false;
     // 도구별 표시 여부. 꺼진 도구는 카드를 숨기고 사용량 조회도 하지 않는다.
     public bool ShowClaude { get; set; } = true;
     public bool ShowCodex { get; set; } = true;
+    // 플로팅 카드 위치. 없으면 작업 영역 우하단 기본 위치를 쓴다.
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
 
     public static string FilePath
     {
