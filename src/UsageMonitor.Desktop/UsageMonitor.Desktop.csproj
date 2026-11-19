@@ -10,6 +10,8 @@
     <RootNamespace>UsageMonitor</RootNamespace>
     <AssemblyName>UsageMonitor</AssemblyName>
     <Version>1.0.0</Version>
+    <!-- exe 아이콘(탐색기, 작업 관리자, 시작 프로그램 목록). 트레이 아이콘은 사용량에 따라 코드에서 그린다. -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
 
     <!-- 단일 exe 배포: dotnet publish -c Release -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
